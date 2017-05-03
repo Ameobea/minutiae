@@ -7,28 +7,33 @@ use cell::{Cell, CellState};
 use entity::{Entity, EntityState};
 use engine::Engine;
 use generator::Generator;
+use util::get_coords;
 
 pub struct Universe<C: CellState, E: EntityState<C>, N: Engine<C, E>> {
-    conf: UniverseConf,
+    pub conf: UniverseConf,
     // function for transforming a cell to the next state given itself and an array of its neigbors
-    cell_mutator: Box<Fn(Cell<C>, &[Cell<C>]) -> Cell<C>>,
+    pub cell_mutator: Box<Fn(&Cell<C>, &[&Cell<C>]) -> Cell<C>>,
     // generator: Box<Generator<C, E, N>>,
-    engine: Box<N>,
+    pub engine: Box<N>,
 
-    seq: usize,
-    cells: Vec<Cell<C>>,
-    entities: Vec<Vec<Entity<C, E>>>,
+    pub seq: usize,
+    pub cells: Vec<Cell<C>>,
+    pub entities: Vec<Vec<Entity<C, E>>>,
 }
 
 #[derive(Clone)]
 pub struct UniverseConf {
-    view_distance: usize,
-    size: usize,
-    overlapping_entities: bool, // if true, multiple entities can reside on the same coordinate simulaneously.
+    pub view_distance: usize,
+    pub size: usize,
+    pub overlapping_entities: bool, // if true, multiple entities can reside on the same coordinate simulaneously.
 }
 
 impl<C: CellState, E: EntityState<C>, N: Engine<C, E>> Universe<C, E, N> {
-    pub fn new(gen: &mut Generator<C, E, N>, engine: Box<N>, conf: UniverseConf, cell_mutator: Box<Fn(Cell<C>, &[Cell<C>]) -> Cell<C>>) -> Universe<C, E, N> {
+    pub fn new(
+        gen: &mut Generator<C, E, N>, engine: Box<N>, conf: UniverseConf, cell_mutator: Box<Fn(&Cell<C>, &[&Cell<C>]) -> Cell<C>>
+    ) -> Universe<C, E, N> {
+        assert!(conf.size > 0);
+
         let mut universe = Universe {
             conf: conf,
             cell_mutator: cell_mutator,
@@ -45,5 +50,28 @@ impl<C: CellState, E: EntityState<C>, N: Engine<C, E>> Universe<C, E, N> {
         universe.entities = entities;
 
         universe
+    }
+
+    pub fn get_cell_neighbors(&self, index: usize) -> &[&Cell<C>] {
+        unimplemented!();
+    }
+
+    pub fn get_entity_neighbors<'a>(&'a self, index: usize, buf: &mut[usize]) {
+        let UniverseConf{view_distance, size, overlapping_entities: _} = self.conf;
+        assert!(buf.len() == view_distance * view_distance);
+
+        let (x, y) = get_coords(index, size);
+        let min_x = if view_distance < x { x - view_distance } else { 0 };
+        let max_x = if x + view_distance < size { x + view_distance } else { size - 1 };
+        let min_y = if view_distance < y { y - view_distance } else { 0 };
+        let max_y = if y + view_distance < size { y + view_distance } else { size - 1 };
+
+        let mut i = 0;
+        for y in min_y..max_y {
+            for x in min_x..max_x {
+                buf[i] = (y * size) + x;
+                i += 1;
+            }
+        }
     }
 }

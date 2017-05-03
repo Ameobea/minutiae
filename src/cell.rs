@@ -9,6 +9,7 @@
 
 pub trait CellState {}
 
+#[derive(Debug)]
 pub struct Cell<CellState> {
     state: CellState,
 }

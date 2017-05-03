@@ -5,9 +5,16 @@
 use universe::Universe;
 use cell::CellState;
 use entity::EntityState;
-use generator::Generator;
+use action::Action;
+
+mod serial;
+mod grid_iterator;
 
 pub trait Engine<C: CellState, E: EntityState<C>>{
     /// The main function of the simulation process.  This is called repeatedly to drive progress in the simulation and
-    fn step(&mut Universe<C, E, Self>) where Self:Sized;
+    fn step(&mut self, &mut Universe<C, E, Self>) where Self:Sized;
+
+    /// Given a requested `Action` from an Entity, checks for its validity against the engine's internal rules and
+    /// applies it if it is successful.
+    fn apply_action(&mut self, Action<C, E>);
 }
