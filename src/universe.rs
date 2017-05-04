@@ -3,22 +3,26 @@
 //! about their neighbors; a view distance of 0 means they only have knowledge of their own state, a view distance of
 //! 1 means that they have knowledge of all neighbors touching them (including diagonals), etc.
 
+use std::marker::PhantomData;
+
 use cell::{Cell, CellState};
 use entity::{Entity, EntityState};
 use engine::Engine;
 use generator::Generator;
-use util::get_coords;
+use action::{CellAction, EntityAction};
 
-pub struct Universe<C: CellState, E: EntityState<C>, N: Engine<C, E>> {
+pub struct Universe<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, CA, EA>> {
     pub conf: UniverseConf,
     // function for transforming a cell to the next state given itself and an array of its neigbors
-    pub cell_mutator: Box<Fn(&Cell<C>, &[&Cell<C>]) -> Cell<C>>,
+    pub cell_mutator: Box<for <'a> Fn(&'a Cell<C>, &Fn(isize, isize) -> Option<&'a Cell<C>>) -> Cell<C>>,
     // generator: Box<Generator<C, E, N>>,
     pub engine: Box<N>,
 
     pub seq: usize,
     pub cells: Vec<Cell<C>>,
     pub entities: Vec<Vec<Entity<C, E>>>,
+    __phantom_ca: PhantomData<CA>,
+    __phantom_ea: PhantomData<EA>,
 }
 
 #[derive(Clone)]
@@ -28,10 +32,11 @@ pub struct UniverseConf {
     pub overlapping_entities: bool, // if true, multiple entities can reside on the same coordinate simulaneously.
 }
 
-impl<C: CellState, E: EntityState<C>, N: Engine<C, E>> Universe<C, E, N> {
+impl<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, CA, EA>> Universe<C, E, CA, EA, N> {
     pub fn new(
-        gen: &mut Generator<C, E, N>, engine: Box<N>, conf: UniverseConf, cell_mutator: Box<Fn(&Cell<C>, &[&Cell<C>]) -> Cell<C>>
-    ) -> Universe<C, E, N> {
+        gen: &mut Generator<C, E, CA, EA, N>, engine: Box<N>, conf: UniverseConf,
+        cell_mutator: Box<for <'a> Fn(&'a Cell<C>, &Fn(isize, isize) -> Option<&'a Cell<C>>) -> Cell<C>>,
+    ) -> Universe<C, E, CA, EA, N> {
         assert!(conf.size > 0);
 
         let mut universe = Universe {
@@ -41,6 +46,8 @@ impl<C: CellState, E: EntityState<C>, N: Engine<C, E>> Universe<C, E, N> {
             seq: 0,
             cells: Vec::new(),
             entities: Vec::new(),
+            __phantom_ca: PhantomData,
+            __phantom_ea: PhantomData,
         };
 
         // use the generator to generate an initial layout of cells and entities with which to populate the world
@@ -50,28 +57,5 @@ impl<C: CellState, E: EntityState<C>, N: Engine<C, E>> Universe<C, E, N> {
         universe.entities = entities;
 
         universe
-    }
-
-    pub fn get_cell_neighbors(&self, index: usize) -> &[&Cell<C>] {
-        unimplemented!();
-    }
-
-    pub fn get_entity_neighbors<'a>(&'a self, index: usize, buf: &mut[usize]) {
-        let UniverseConf{view_distance, size, overlapping_entities: _} = self.conf;
-        assert!(buf.len() == view_distance * view_distance);
-
-        let (x, y) = get_coords(index, size);
-        let min_x = if view_distance < x { x - view_distance } else { 0 };
-        let max_x = if x + view_distance < size { x + view_distance } else { size - 1 };
-        let min_y = if view_distance < y { y - view_distance } else { 0 };
-        let max_y = if y + view_distance < size { y + view_distance } else { size - 1 };
-
-        let mut i = 0;
-        for y in min_y..max_y {
-            for x in min_x..max_x {
-                buf[i] = (y * size) + x;
-                i += 1;
-            }
-        }
     }
 }

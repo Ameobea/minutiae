@@ -3,8 +3,9 @@
 use universe::Universe;
 use cell::{Cell, CellState};
 use entity::{Entity, EntityState};
+use action::{CellAction, EntityAction};
 use engine::Engine;
 
-pub trait Generator<C: CellState, E: EntityState<C>, N: Engine<C, E>> {
-    fn gen(&mut self, universe: &Universe<C, E, N>) -> (Vec<Cell<C>>, Vec<Vec<Entity<C, E>>>);
+pub trait Generator<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, CA, EA>> {
+    fn gen(&mut self, universe: &Universe<C, E, CA, EA, N>) -> (Vec<Cell<C>>, Vec<Vec<Entity<C, E>>>);
 }

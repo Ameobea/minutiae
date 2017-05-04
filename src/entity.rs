@@ -4,14 +4,16 @@
 
 use std::marker::PhantomData;
 
-use universe::Universe;
-use action::Action;
+use action::{Action, CellAction, EntityAction};
 use cell::{Cell, CellState};
 
 pub trait EntityState<C: CellState> {
-    fn transform(
-        &self, &universe: &[Vec<Entity<C, Self>>], neighbor_entity_coords: &[usize], neighbor_cells: &[&Cell<C>]
-    ) -> Action<C, Self> where Self:Sized;
+    fn transform<'a, CA: CellAction<C>, EA: EntityAction<C, Self>>(
+        &self,
+        entity_accessor: &Fn(isize, isize) -> Option<&'a Vec<Entity<C, Self>>>,
+        cell_accessor: &Fn(isize, isize) -> Option<&'a Cell<C>>,
+        action_executor: &FnMut(Action<C, Self, CA, EA>),
+    ) where Self:Sized;
 }
 
 pub struct Entity<C: CellState, S: EntityState<C>> {

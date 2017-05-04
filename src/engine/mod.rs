@@ -5,16 +5,16 @@
 use universe::Universe;
 use cell::CellState;
 use entity::EntityState;
-use action::Action;
+use action::{Action, CellAction, EntityAction};
 
 mod serial;
 mod grid_iterator;
 
-pub trait Engine<C: CellState, E: EntityState<C>>{
+pub trait Engine<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>>{
     /// The main function of the simulation process.  This is called repeatedly to drive progress in the simulation and
-    fn step(&mut self, &mut Universe<C, E, Self>) where Self:Sized;
+    fn step(&mut self, &mut Universe<C, E, CA, EA, Self>) where Self:Sized;
 
     /// Given a requested `Action` from an Entity, checks for its validity against the engine's internal rules and
     /// applies it if it is successful.
-    fn apply_action(&mut self, Action<C, E>);
+    fn apply_actions(&mut self, &[Action<C, E, CA, EA>]);
 }
