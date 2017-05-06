@@ -11,6 +11,23 @@ use engine::Engine;
 use generator::Generator;
 use action::{CellAction, EntityAction};
 
+#[derive(Clone)]
+pub struct UniverseConf {
+    pub view_distance: usize,
+    pub size: usize,
+    pub overlapping_entities: bool, // if true, multiple entities can reside on the same coordinate simulaneously.
+}
+
+impl Default for UniverseConf {
+    fn default() -> UniverseConf {
+        UniverseConf {
+            view_distance: 1,
+            size: 10000,
+            overlapping_entities: true,
+        }
+    }
+}
+
 pub struct Universe<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, CA, EA>> {
     pub conf: UniverseConf,
     // function for transforming a cell to the next state given itself and an array of its neigbors
@@ -25,16 +42,9 @@ pub struct Universe<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: Enti
     __phantom_ea: PhantomData<EA>,
 }
 
-#[derive(Clone)]
-pub struct UniverseConf {
-    pub view_distance: usize,
-    pub size: usize,
-    pub overlapping_entities: bool, // if true, multiple entities can reside on the same coordinate simulaneously.
-}
-
 impl<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, CA, EA>> Universe<C, E, CA, EA, N> {
     pub fn new(
-        gen: &mut Generator<C, E, CA, EA, N>, engine: Box<N>, conf: UniverseConf,
+        conf: UniverseConf, gen: &mut Generator<C, E, CA, EA, N>, engine: Box<N>,
         cell_mutator: Box<for <'a> Fn(&'a Cell<C>, &Fn(isize, isize) -> Option<&'a Cell<C>>) -> Cell<C>>,
     ) -> Universe<C, E, CA, EA, N> {
         assert!(conf.size > 0);
@@ -51,7 +61,7 @@ impl<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>,
         };
 
         // use the generator to generate an initial layout of cells and entities with which to populate the world
-        let (cells, entities) = gen.gen(&universe);
+        let (cells, entities) = gen.gen(&universe.conf);
 
         universe.cells = cells;
         universe.entities = entities;

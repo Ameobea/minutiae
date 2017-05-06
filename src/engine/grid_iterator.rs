@@ -4,7 +4,7 @@ pub trait GridIterator {
     fn visit(&mut self) -> Option<usize>;
 }
 
-impl Iterator for GridIterator {
+impl<'a> Iterator for &'a mut GridIterator {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -16,7 +16,7 @@ pub trait EntityIterator {
     fn visit(&mut self) -> Option<(usize, usize)>;
 }
 
-impl Iterator for EntityIterator {
+impl<'a> Iterator for &'a mut EntityIterator {
     type Item = (usize, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
