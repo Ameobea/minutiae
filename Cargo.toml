@@ -4,3 +4,8 @@ version = "0.1.0"
 authors = ["Casey Primozic <me@ameo.link>"]
 
 [dependencies]
+rand = "0.3"
+pcg = { git = "https://github.com/codahale/pcg.git" }
+
+[profile.release]
+debug = true

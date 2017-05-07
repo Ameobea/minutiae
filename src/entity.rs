@@ -3,9 +3,9 @@
 //! capable of mutating any aspect of the world outside of the simulation engine itself.
 
 use std::marker::PhantomData;
+use std::clone::Clone;
 
-use action::{Action, CellAction, EntityAction};
-use cell::{Cell, CellState};
+use cell::CellState;
 
 pub trait EntityState<C: CellState> {}
 
@@ -15,11 +15,11 @@ pub struct Entity<C: CellState, S: EntityState<C>> {
     phantom: PhantomData<C>,
 }
 
-impl<C: CellState, S: EntityState<C>> Entity<C, S> {
-    // fn transform<'a, CA: CellAction<C>, EA: EntityAction<C, Self>>(
-    //     &self,
-    //     entity_accessor: &Fn(isize, isize) -> Option<&'a Vec<Entity<C, Self>>>,
-    //     cell_accessor: &Fn(isize, isize) -> Option<&'a Cell<C>>,
-    //     action_executor: &FnMut(Action<C, Self, CA, EA>),
-    // ) where Self:Sized;
+impl<C: CellState, E: EntityState<C>> Clone for Entity<C, E> where E:Clone {
+    fn clone(&self) -> Self {
+        Entity {
+            state: self.state.clone(),
+            phantom: PhantomData,
+        }
+    }
 }

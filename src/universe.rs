@@ -4,10 +4,10 @@
 //! 1 means that they have knowledge of all neighbors touching them (including diagonals), etc.
 
 use std::marker::PhantomData;
+use std::fmt::{self, Debug, Display, Formatter};
 
 use cell::{Cell, CellState};
 use entity::{Entity, EntityState};
-use engine::Engine;
 use generator::Generator;
 use action::{Action, CellAction, EntityAction};
 
@@ -22,16 +22,16 @@ impl Default for UniverseConf {
     fn default() -> UniverseConf {
         UniverseConf {
             view_distance: 1,
-            size: 10000,
+            size: 8000,
             overlapping_entities: true,
         }
     }
 }
 
-pub struct Universe<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, CA, EA>> {
+pub struct Universe<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> {
     pub conf: UniverseConf,
     // function for transforming a cell to the next state given itself and an array of its neigbors
-    pub cell_mutator: Box<for <'a> Fn(&'a Cell<C>, &Fn(isize, isize) -> Option<&'a Cell<C>>) -> Cell<C>>,
+    pub cell_mutator: fn(usize, &[Cell<C>]) -> Option<C>,
     // function that determines the behaviour of entities.
     pub entity_driver: Box<for <'a> Fn(
         &Entity<C, E>,
@@ -39,48 +39,67 @@ pub struct Universe<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: Enti
         &Fn(isize, isize) -> Option<&'a Cell<C>>,
         &FnMut(Action<C, E, CA, EA>)
     )>,
-    pub engine: Box<N>,
 
     pub seq: usize,
     pub cells: Vec<Cell<C>>,
     pub entities: Vec<Vec<Entity<C, E>>>,
-    pub entity_counts: Vec<usize>,
     __phantom_ca: PhantomData<CA>,
     __phantom_ea: PhantomData<EA>,
 }
 
-impl<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, CA, EA>> Universe<C, E, CA, EA, N> {
+impl<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> Universe<C, E, CA, EA> {
     pub fn new(
-        conf: UniverseConf, gen: &mut Generator<C, E, CA, EA, N>, engine: Box<N>,
-        cell_mutator: Box<for <'a> Fn(&'a Cell<C>, &Fn(isize, isize) -> Option<&'a Cell<C>>) -> Cell<C>>,
+        conf: UniverseConf, gen: &mut Generator<C, E, CA, EA>,
+        cell_mutator: fn(usize, &[Cell<C>]) -> Option<C>,
         entity_driver: Box<for <'a> Fn(
             &Entity<C, E>,
             &Fn(isize, isize) -> Option<&'a Vec<Entity<C, E>>>,
             &Fn(isize, isize) -> Option<&'a Cell<C>>,
             &FnMut(Action<C, E, CA, EA>)
         )>,
-    ) -> Universe<C, E, CA, EA, N> {
+    ) -> Universe<C, E, CA, EA> {
         assert!(conf.size > 0);
 
         let mut universe = Universe {
             conf: conf,
             cell_mutator: cell_mutator,
             entity_driver: entity_driver,
-            engine: engine,
             seq: 0,
             cells: Vec::new(),
             entities: Vec::new(),
-            entity_counts: Vec::new(),
             __phantom_ca: PhantomData,
             __phantom_ea: PhantomData,
         };
 
         // use the generator to generate an initial layout of cells and entities with which to populate the world
-        let (cells, entities, entity_counts) = gen.gen(&universe.conf);
+        let (cells, entities) = gen.gen(&universe.conf);
 
         universe.cells = cells;
         universe.entities = entities;
 
         universe
+    }
+}
+
+impl<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> Debug for Universe<C, E, CA, EA> where C:Display, E:Display {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        let length = self.conf.size * self.conf.size;
+        let mut buf = String::with_capacity(length);
+        buf.push_str(&format!("{}", self.seq));
+
+        for i in 0..length {
+            if i % self.conf.size == 0 {
+                buf.push('\n');
+            }
+
+            if self.entities[i].len() > 0 {
+                buf.push_str(&format!("{}", self.entities[i][0].state));
+            } else {
+                buf.push_str(&format!("{}", self.cells[i].state));
+            }
+        }
+
+        buf.push('\n');
+        write!(formatter, "{}", buf)
     }
 }

@@ -7,9 +7,19 @@
 //! cases where the cell is on the edge of the universe.  The size of the the supplied array is dependant on the view
 //! distance of the universe.
 
+use std::clone::Clone;
+
 pub trait CellState {}
 
 #[derive(Debug)]
 pub struct Cell<CellState> {
-    state: CellState,
+    pub state: CellState,
+}
+
+impl<S> Clone for Cell<S> where S:Clone {
+    fn clone(&self) -> Self {
+        Cell {
+            state: self.state.clone(),
+        }
+    }
 }
