@@ -3,11 +3,12 @@
 //! about their neighbors; a view distance of 0 means they only have knowledge of their own state, a view distance of
 //! 1 means that they have knowledge of all neighbors touching them (including diagonals), etc.
 
-use std::marker::PhantomData;
+use std::cell::Cell as RustCell;
 use std::fmt::{self, Debug, Display, Formatter};
+use std::marker::PhantomData;
 
 use cell::{Cell, CellState};
-use entity::{Entity, EntityState};
+use entity::{Entity, EntityState, MutEntityState};
 use generator::Generator;
 use action::{Action, CellAction, EntityAction};
 
@@ -28,36 +29,38 @@ impl Default for UniverseConf {
     }
 }
 
-pub struct Universe<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> {
+pub struct Universe<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>> {
     pub conf: UniverseConf,
     // function for transforming a cell to the next state given itself and an array of its neigbors
     pub cell_mutator: fn(usize, &[Cell<C>]) -> Option<C>,
     // function that determines the behaviour of entities.
-    pub entity_driver: Box<for <'a> Fn(
-        &Entity<C, E>,
-        &Fn(isize, isize) -> Option<&'a Vec<Entity<C, E>>>,
-        &Fn(isize, isize) -> Option<&'a Cell<C>>,
-        &FnMut(Action<C, E, CA, EA>)
-    )>,
+    pub entity_driver: fn(
+        &E,
+        &RustCell<M>,
+        &[Vec<Entity<C, E, M>>],
+        &[Cell<C>],
+        &mut FnMut(Action<C, E, CA, EA>)
+    ),
 
     pub seq: usize,
     pub cells: Vec<Cell<C>>,
-    pub entities: Vec<Vec<Entity<C, E>>>,
+    pub entities: Vec<Vec<Entity<C, E, M>>>,
     __phantom_ca: PhantomData<CA>,
     __phantom_ea: PhantomData<EA>,
 }
 
-impl<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> Universe<C, E, CA, EA> {
+impl<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>> Universe<C, E, M, CA, EA> {
     pub fn new(
-        conf: UniverseConf, gen: &mut Generator<C, E, CA, EA>,
+        conf: UniverseConf, gen: &mut Generator<C, E, M, CA, EA>,
         cell_mutator: fn(usize, &[Cell<C>]) -> Option<C>,
-        entity_driver: Box<for <'a> Fn(
-            &Entity<C, E>,
-            &Fn(isize, isize) -> Option<&'a Vec<Entity<C, E>>>,
-            &Fn(isize, isize) -> Option<&'a Cell<C>>,
-            &FnMut(Action<C, E, CA, EA>)
-        )>,
-    ) -> Universe<C, E, CA, EA> {
+        entity_driver: fn(
+            &E,
+            &RustCell<M>,
+            &[Vec<Entity<C, E, M>>],
+            &[Cell<C>],
+            &mut FnMut(Action<C, E, CA, EA>)
+        )
+    ) -> Universe<C, E, M, CA, EA> {
         assert!(conf.size > 0);
 
         let mut universe = Universe {
@@ -81,7 +84,9 @@ impl<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>>
     }
 }
 
-impl<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> Debug for Universe<C, E, CA, EA> where C:Display, E:Display {
+impl<
+    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>
+> Debug for Universe<C, E, M, CA, EA> where C:Display, E:Display {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         let length = self.conf.size * self.conf.size;
         let mut buf = String::with_capacity(length);

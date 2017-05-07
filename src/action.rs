@@ -8,9 +8,9 @@ use entity::EntityState;
 use cell::CellState;
 
 pub struct Action<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>>  {
-    x_offset: isize,
-    y_offset: isize,
-    action: TypedAction<C, E, CA, EA>,
+    pub x_offset: isize,
+    pub y_offset: isize,
+    pub action: TypedAction<C, E, CA, EA>,
     __phantom_c: PhantomData<C>,
     __phantom_e: PhantomData<E>,
 }
@@ -37,4 +37,22 @@ pub enum SelfAction<C: CellState, E: EntityState<C>, EA: EntityAction<C, E>> {
     Custom(EA),
     __phantom_c(PhantomData<C>),
     __phantom_e(PhantomData<E>),
+}
+
+impl<C: CellState, E: EntityState<C>, EA: EntityAction<C, E>> SelfAction<C, E, EA> {
+    pub fn translate(x: isize, y: isize) -> SelfAction<C, E, EA> {
+        SelfAction::Translate(x, y)
+    }
+}
+
+impl<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> Action<C, E, CA, EA> {
+    pub fn mut_self(self_action: SelfAction<C, E, EA>) -> Action<C, E, CA, EA> {
+        Action {
+            x_offset: 0,
+            y_offset: 0,
+            action: TypedAction::SelfAction(self_action),
+            __phantom_c: PhantomData,
+            __phantom_e: PhantomData,
+        }
+    }
 }
