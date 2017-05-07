@@ -19,10 +19,22 @@ pub struct Action<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: Entity
 pub enum TypedAction<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>>  {
     CellAction(CA),
     EntityAction(EA),
+    SelfAction(SelfAction<C, E, EA>),
     __phantom_c(PhantomData<C>),
     __phantom_e(PhantomData<E>),
 }
 
+/// An attempt of an entity to mutate a cell.
 pub trait CellAction<C: CellState> {}
 
+/// An attempt of an entity to mutate another entity.
 pub trait EntityAction<C: CellState, E: EntityState<C>> {}
+
+/// An attempt of an entity to mutate itself.
+pub enum SelfAction<C: CellState, E: EntityState<C>, EA: EntityAction<C, E>> {
+    Translate(isize, isize),
+    Suicide,
+    Custom(EA),
+    __phantom_c(PhantomData<C>),
+    __phantom_e(PhantomData<E>),
+}

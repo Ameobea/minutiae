@@ -8,7 +8,7 @@ use entity::EntityState;
 use action::{Action, CellAction, EntityAction};
 
 pub mod serial;
-pub mod grid_iterator;
+pub mod iterator;
 
 pub trait Engine<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> {
     /// The main function of the simulation process.  This is called repeatedly to drive progress in the simulation and

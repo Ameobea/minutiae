@@ -9,7 +9,7 @@ use cell::{Cell, CellState};
 use entity::{Entity, EntityState};
 use engine::Engine;
 use generator::Generator;
-use action::{CellAction, EntityAction};
+use action::{Action, CellAction, EntityAction};
 
 #[derive(Clone)]
 pub struct UniverseConf {
@@ -32,12 +32,19 @@ pub struct Universe<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: Enti
     pub conf: UniverseConf,
     // function for transforming a cell to the next state given itself and an array of its neigbors
     pub cell_mutator: Box<for <'a> Fn(&'a Cell<C>, &Fn(isize, isize) -> Option<&'a Cell<C>>) -> Cell<C>>,
-    // generator: Box<Generator<C, E, N>>,
+    // function that determines the behaviour of entities.
+    pub entity_driver: Box<for <'a> Fn(
+        &Entity<C, E>,
+        &Fn(isize, isize) -> Option<&'a Vec<Entity<C, E>>>,
+        &Fn(isize, isize) -> Option<&'a Cell<C>>,
+        &FnMut(Action<C, E, CA, EA>)
+    )>,
     pub engine: Box<N>,
 
     pub seq: usize,
     pub cells: Vec<Cell<C>>,
     pub entities: Vec<Vec<Entity<C, E>>>,
+    pub entity_counts: Vec<usize>,
     __phantom_ca: PhantomData<CA>,
     __phantom_ea: PhantomData<EA>,
 }
@@ -46,22 +53,30 @@ impl<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>,
     pub fn new(
         conf: UniverseConf, gen: &mut Generator<C, E, CA, EA, N>, engine: Box<N>,
         cell_mutator: Box<for <'a> Fn(&'a Cell<C>, &Fn(isize, isize) -> Option<&'a Cell<C>>) -> Cell<C>>,
+        entity_driver: Box<for <'a> Fn(
+            &Entity<C, E>,
+            &Fn(isize, isize) -> Option<&'a Vec<Entity<C, E>>>,
+            &Fn(isize, isize) -> Option<&'a Cell<C>>,
+            &FnMut(Action<C, E, CA, EA>)
+        )>,
     ) -> Universe<C, E, CA, EA, N> {
         assert!(conf.size > 0);
 
         let mut universe = Universe {
             conf: conf,
             cell_mutator: cell_mutator,
+            entity_driver: entity_driver,
             engine: engine,
             seq: 0,
             cells: Vec::new(),
             entities: Vec::new(),
+            entity_counts: Vec::new(),
             __phantom_ca: PhantomData,
             __phantom_ea: PhantomData,
         };
 
         // use the generator to generate an initial layout of cells and entities with which to populate the world
-        let (cells, entities) = gen.gen(&universe.conf);
+        let (cells, entities, entity_counts) = gen.gen(&universe.conf);
 
         universe.cells = cells;
         universe.entities = entities;
