@@ -50,6 +50,11 @@ pub struct Universe<C: CellState, E: EntityState<C>, M: MutEntityState, CA: Cell
     pub entities: Vec<Vec<Entity<C, E, M>>>,
     // Contains the indices of all grid cells that contain entities.
     pub entity_meta: HashSet<usize>,
+    // these two values are used for pre-allocating space on the action buffer based on average actions per cycle
+    pub average_actions_per_cycle: usize,
+    pub total_actions: usize,
+    pub average_unique_entities_modified_per_cycle: usize,
+    pub total_entity_modifications: usize,
     __phantom_ca: PhantomData<CA>,
     __phantom_ea: PhantomData<EA>,
 }
@@ -78,6 +83,10 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: 
             cells: Vec::new(),
             entities: Vec::new(),
             entity_meta: HashSet::new(),
+            average_actions_per_cycle: 0,
+            total_actions: 0,
+            average_unique_entities_modified_per_cycle: 0,
+            total_entity_modifications: 0,
             __phantom_ca: PhantomData,
             __phantom_ea: PhantomData,
         };
@@ -87,6 +96,7 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: 
 
         universe.cells = cells;
         universe.entities = entities;
+        universe.entity_meta = entity_meta;
 
         universe
     }

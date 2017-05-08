@@ -9,7 +9,7 @@
 
 use std::clone::Clone;
 
-pub trait CellState {}
+pub trait CellState:Clone {}
 
 #[derive(Debug)]
 pub struct Cell<CellState> {

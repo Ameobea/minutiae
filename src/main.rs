@@ -5,6 +5,7 @@
 extern crate rand;
 extern crate pcg;
 extern crate test;
+extern crate uuid;
 
 use std::cell::Cell as RustCell;
 use std::fmt::{self, Display, Formatter};
@@ -263,7 +264,7 @@ fn main() {
     );
 
     let driver = BasicDriver::new();
-    driver.init(universe, engine, &mut [/*Box::new(UniverseDisplayer {}), Box::new(Delay(80))*/]);
+    driver.init(universe, engine, &mut [Box::new(UniverseDisplayer {}), Box::new(Delay(80))]);
 }
 
 #[bench]

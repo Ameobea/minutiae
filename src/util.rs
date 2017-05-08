@@ -12,3 +12,5 @@ pub fn get_index(x: usize, y: usize, size: usize) -> usize {
     y * size + x
 }
 
+// /// Moves an entity from one coordinate of the universe to another.
+// fn move_entity<()

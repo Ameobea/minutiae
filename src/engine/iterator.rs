@@ -82,14 +82,11 @@ impl<C: CellState, E: EntityState<C>> SerialEntityIterator<C, E> {
     }
 }
 
+#[inline(always)]
 fn access_entity<C: CellState, E: EntityState<C>, M: MutEntityState>(
     entity_meta: &HashSet<usize>, entities: &[Vec<Entity<C, E, M>>], universe_index: usize, entity_index: usize
 ) -> bool {
-    if entity_meta.contains(&universe_index) && entities[universe_index].len() > entity_index {
-        true
-    } else {
-        false
-    }
+    entity_meta.contains(&universe_index) && entities[universe_index].len() > entity_index
 }
 
 impl<C: CellState, E: EntityState<C>, M: MutEntityState> EntityIterator<C, E, M> for SerialEntityIterator<C, E> {
