@@ -4,6 +4,7 @@
 
 use std::cell::Cell as RustCell;
 use std::clone::Clone;
+use std::fmt::{self, Debug, Formatter};
 use std::marker::PhantomData;
 
 use test;
@@ -20,6 +21,12 @@ pub struct Entity<C: CellState, S: EntityState<C>, M: MutEntityState> {
     pub state: S,
     pub mut_state: RustCell<M>,
     phantom: PhantomData<C>,
+}
+
+impl<C: CellState, E: EntityState<C>, M: MutEntityState> Debug for Entity<C, E, M> where E:Debug {
+    fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
+        write!(formatter, "Entity {{uuid: {:?}, state: {:?} }}", self.uuid, self.state)
+    }
 }
 
 impl<C: CellState, E: EntityState<C>, M: MutEntityState> Clone for Entity<C, E, M> {

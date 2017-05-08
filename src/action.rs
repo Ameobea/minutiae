@@ -4,17 +4,22 @@
 
 use std::marker::PhantomData;
 
+use uuid::Uuid;
+
 use entity::EntityState;
 use cell::CellState;
 
 /// An action that is associated with a particular entity
+#[derive(Debug)]
 pub struct OwnedAction<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> {
     pub source_universe_index: usize,
     pub source_entity_index: usize,
+    pub source_uuid: Uuid,
     pub action: Action<C, E, CA, EA>,
 }
 
 #[allow(non_camel_case_types)]
+#[derive(Debug)]
 pub enum Action<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>>  {
     CellAction {
         action: CA,
@@ -39,6 +44,7 @@ pub trait EntityAction<C: CellState, E: EntityState<C>> {}
 
 /// An attempt of an entity to mutate itself.
 #[allow(non_camel_case_types)]
+#[derive(Debug)]
 pub enum SelfAction<C: CellState, E: EntityState<C>, EA: EntityAction<C, E>> {
     Translate(isize, isize),
     Suicide,

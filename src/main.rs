@@ -9,10 +9,11 @@ extern crate uuid;
 
 use std::cell::Cell as RustCell;
 use std::fmt::{self, Display, Formatter};
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use pcg::PcgRng;
 use rand::Rng;
+use uuid::Uuid;
 
 mod universe;
 mod cell;
@@ -35,9 +36,10 @@ use util::{get_coords, get_index};
 use driver::{Driver, BasicDriver};
 use driver::middleware::{UniverseDisplayer, Delay};
 
-const UNIVERSE_SIZE: usize = 36;
+const UNIVERSE_SIZE: usize = 5000;
+const ENTITY_COUNT: usize = 500;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum OurCellState {
     Empty,
     Filled,
@@ -56,7 +58,7 @@ impl Display for OurCellState {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct OurEntityState {
     energy: u32,
 }
@@ -69,9 +71,20 @@ impl Display for OurEntityState {
     }
 }
 
-#[derive(Clone)]
 struct OurMutEntityState {
     rng: Option<PcgRng>,
+}
+
+impl Clone for OurMutEntityState {
+    fn clone(&self) -> Self {
+        let mut true_rng = rand::thread_rng();
+        let mut prng = PcgRng::new_unseeded();
+        prng.set_stream(true_rng.next_u64());
+
+        OurMutEntityState {
+            rng: Some(prng)
+        }
+    }
 }
 
 impl MutEntityState for OurMutEntityState {}
@@ -84,6 +97,7 @@ impl Default for OurMutEntityState {
     }
 }
 
+#[derive(Debug)]
 enum OurCellAction {
     Create,
     Destroy,
@@ -91,35 +105,18 @@ enum OurCellAction {
 
 impl CellAction<OurCellState> for OurCellAction {}
 
+#[derive(Debug)]
 enum OurEntityAction {}
 
 impl EntityAction<OurCellState, OurEntityState> for OurEntityAction {}
 
 struct OurEngine {}
 
-fn exec_action(
+fn exec_cell_action(
     action: &OwnedAction<OurCellState, OurEntityState, OurCellAction, OurEntityAction>,
     universe: &mut Universe<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, OurEntityAction>
 ) {
     match &action.action {
-        &Action::SelfAction(ref self_action) => {
-            match self_action {
-                &SelfAction::Translate(x_offset, y_offset) => {
-                    let (cur_universe_index, cur_entity_index) = (action.source_universe_index, action.source_entity_index);
-                    let (cur_x, cur_y) = get_coords(cur_universe_index, UNIVERSE_SIZE);
-                    let new_x = cur_x as isize + x_offset;
-                    let new_y = cur_y as isize + y_offset;
-                    // println!("{}, {}", new_x, new_y);
-                    if new_x >= 0 && new_x < UNIVERSE_SIZE as isize && new_y >= 0 && new_y < UNIVERSE_SIZE as isize {
-                        let new_index = get_index(new_x as usize, new_y as usize, UNIVERSE_SIZE);
-                        let entity = universe.entities[cur_universe_index].remove(cur_entity_index);
-                        universe.entities[new_index].push(entity);
-                        // println!("Moved entity to {}, {}", new_x, new_y);
-                    }
-                }
-                _ => unimplemented!(),
-            }
-        },
         &Action::CellAction{action: ref cell_action, x_offset, y_offset} => {
             let (cur_universe_index, _) = (action.source_universe_index, action.source_entity_index);
             let (cur_x, cur_y) = get_coords(cur_universe_index, UNIVERSE_SIZE);
@@ -136,8 +133,66 @@ fn exec_action(
                     }
                 }
             }
-        }
-        _ => unimplemented!(),
+        },
+        _ => unreachable!(),
+    }
+}
+
+fn exec_self_action(
+    action: &OwnedAction<OurCellState, OurEntityState, OurCellAction, OurEntityAction>,
+    universe: &mut Universe<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, OurEntityAction>
+) {
+    match &action.action {
+        &Action::SelfAction(ref self_action) => {
+            match self_action {
+                &SelfAction::Translate(x_offset, y_offset) => {
+                    let (cur_universe_index, cur_entity_index) = (action.source_universe_index, action.source_entity_index);
+                    let (cur_x, cur_y) = get_coords(cur_universe_index, UNIVERSE_SIZE);
+                    let new_x = cur_x as isize + x_offset;
+                    let new_y = cur_y as isize + y_offset;
+
+                    // verify that the supplied desination coordinates are in bounds
+                    // TODO: verify that the supplied destination coordinates are within ruled bounds of destination
+                    // println!("{}, {}", new_x, new_y);
+                    if new_x >= 0 && new_x < UNIVERSE_SIZE as isize && new_y >= 0 && new_y < UNIVERSE_SIZE as isize {
+                        let new_index = get_index(new_x as usize, new_y as usize, UNIVERSE_SIZE);
+                        // println!("Attempting to move entity {:?} from {}, {} to {}, {}", action.source_uuid, cur_x, cur_y, new_x, new_y);
+                        // println!("{:?}", universe.entity_meta);
+
+                        // check to make sure that the entity we're searching for is in its expected location
+                        // println!("{:?}", universe.entities[cur_universe_index]);
+                        let entity = if universe.entities[cur_universe_index].len() <= cur_entity_index ||
+                            universe.entities[cur_universe_index][cur_entity_index].uuid != action.source_uuid
+                        {
+                            let real_entity_index = universe.entities[cur_universe_index]
+                                .iter()
+                                .position(|& ref entity| entity.uuid == action.source_uuid)
+                                .expect("The requested entity is not found at any index at the specified universe index!");
+                            universe.entities[cur_universe_index].remove(real_entity_index)
+                        } else {
+                            universe.entities[cur_universe_index].remove(cur_entity_index)
+                        };
+                        universe.entity_meta.insert(entity.uuid, (new_x as usize, new_y as usize))
+                            .expect("No entry found in entity meta HashMap for pre-existing Entity!");
+                        universe.entities[new_index].push(entity);
+                    }
+                }
+                _ => unimplemented!(),
+            }
+        },
+        _ => unreachable!(),
+    }
+}
+
+fn exec_entity_action(
+    action: &OwnedAction<OurCellState, OurEntityState, OurCellAction, OurEntityAction>,
+    universe: &mut Universe<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, OurEntityAction>
+) {
+    match &action.action {
+        &Action::EntityAction{action: ref cell_action, x_offset, y_offset} => {
+            unimplemented!();
+        },
+        _ => unreachable!(),
     }
 }
 
@@ -158,10 +213,22 @@ impl SerialEngine<
     fn exec_actions(
         &self,
         universe: &mut Universe<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, OurEntityAction>,
-        actions: &[OwnedAction<OurCellState, OurEntityState, OurCellAction, OurEntityAction>]
+        cell_actions: &[OwnedAction<OurCellState, OurEntityState, OurCellAction, OurEntityAction>],
+        self_actions: &[OwnedAction<OurCellState, OurEntityState, OurCellAction, OurEntityAction>],
+        entity_actions: &[OwnedAction<OurCellState, OurEntityState, OurCellAction, OurEntityAction>],
     ) {
-        for action in actions {
-            exec_action(action, universe);
+        // process actions in order of cell actions, then self actions, and finally entity actions
+        for cell_action in cell_actions {
+            exec_cell_action(cell_action, universe);
+        }
+
+        // println!("{:?}", self_actions);
+        for self_action in self_actions {
+            exec_self_action(self_action, universe);
+        }
+
+        for entity_action in entity_actions {
+            exec_entity_action(entity_action, universe);
         }
     }
 }
@@ -169,7 +236,7 @@ impl SerialEngine<
 struct OurWorldGenerator(u64);
 
 impl Generator<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, OurEntityAction> for OurWorldGenerator {
-    fn gen(&mut self, conf: &UniverseConf) -> (Vec<Cell<OurCellState>>, Vec<Vec<Entity<OurCellState, OurEntityState, OurMutEntityState>>>, HashSet<usize>) {
+    fn gen(&mut self, conf: &UniverseConf) -> (Vec<Cell<OurCellState>>, Vec<Vec<Entity<OurCellState, OurEntityState, OurMutEntityState>>>, HashMap<Uuid, (usize, usize)>) {
         println!("Generating world...");
         // let mut rng = PcgRng::new_unseeded().with_stream(self.0);
         let length = conf.size * conf.size;
@@ -183,20 +250,21 @@ impl Generator<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, O
             cells.push(Cell{state: OurCellState::Empty});
         }
         let mut entities = vec![Vec::new(); length];
+
+        let mut entity_meta = HashMap::new();
         let mut rng = PcgRng::new_unseeded();
         rng.set_stream(10101010101);
-        let entity = Entity::new(
+        let origin_entity = Entity::new(
             OurEntityState{energy: 10000},
-            OurMutEntityState {rng: Some(rng)}
+            OurMutEntityState {rng: Some(rng.clone())}
         );
-        entities[4].push(entity.clone());
-        entities[10].push(entity.clone());
-        entities[30].push(entity);
 
-        let mut entity_meta = HashSet::new();
-        entity_meta.insert(4);
-        entity_meta.insert(10);
-        entity_meta.insert(30);
+        for _ in 0..ENTITY_COUNT {
+            let index = rng.gen_range(0, UNIVERSE_SIZE);
+            let entity = origin_entity.clone();
+            entity_meta.insert(entity.uuid, get_coords(index, UNIVERSE_SIZE));
+            entities[index].push(entity);
+        }
 
         (cells, entities, entity_meta)
     }
@@ -217,31 +285,29 @@ fn our_entity_driver<'a>(
     mut_state: &RustCell<OurMutEntityState>,
     _: &[Vec<Entity<OurCellState, OurEntityState, OurMutEntityState>>],
     cells: &[Cell<OurCellState>],
-    action_executor: &mut FnMut(Action<OurCellState, OurEntityState, OurCellAction, OurEntityAction>),
+    cell_action_executor: &mut FnMut(OurCellAction, isize, isize),
+    self_action_executor: &mut FnMut(SelfAction<OurCellState, OurEntityState, OurEntityAction>),
+    entity_action_executor: &mut FnMut(OurEntityAction, isize, isize)
 ) {
     let mut mut_state_inner = mut_state.take();
 
     {
         let mut rng = mut_state_inner.rng.as_mut().unwrap();
         let (x_offset, y_offset) = (rng.gen_range(-1, 2), rng.gen_range(-1, 2));
-        let action = Action::SelfAction(SelfAction::translate(x_offset, y_offset));
-        action_executor(action);
+        let action = SelfAction::translate(x_offset, y_offset);
+        self_action_executor(action);
 
         if rng.next_u32() > !(1u32 << 31) {
-            let (x_offset, y_offset) = (-x_offset, -y_offset);
-            let (target_x, target_y) = (cur_x as isize + x_offset, cur_y as isize + y_offset);
+            let (target_x_offset, target_y_offset) = (-x_offset, -y_offset);
+            let (target_x, target_y) = (cur_x as isize + target_x_offset, cur_y as isize + target_y_offset);
             if target_x >= 0 && target_x < UNIVERSE_SIZE as isize && target_y >= 0 && target_y < UNIVERSE_SIZE as isize {
                 let target_index = get_index(target_x as usize, target_y as usize, UNIVERSE_SIZE);
+                // println!("Queued intent to move from {}, {} to {}, {}", cur_x, cur_y, target_x, target_y);
                 let cell_action = match cells[target_index].state {
                     OurCellState::Empty => OurCellAction::Create,
                     OurCellState::Filled => OurCellAction::Destroy,
                 };
-                let action = Action::CellAction{
-                    action: cell_action,
-                    x_offset: x_offset,
-                    y_offset: y_offset
-                };
-                action_executor(action);
+                cell_action_executor(cell_action, target_x_offset, target_y_offset);
             }
         }
     }
@@ -264,7 +330,7 @@ fn main() {
     );
 
     let driver = BasicDriver::new();
-    driver.init(universe, engine, &mut [Box::new(UniverseDisplayer {}), Box::new(Delay(80))]);
+    driver.init(universe, engine, &mut [/*Box::new(UniverseDisplayer {}), Box::new(Delay(10))*/]);
 }
 
 #[bench]
@@ -288,7 +354,7 @@ fn universe_step(b: &mut test::Bencher) {
 
 #[bench]
 fn hashset_remove_insert(b: &mut test::Bencher) {
-    let mut hs = HashSet::new();
+    let mut hs = ::std::collections::HashSet::new();
     for i in 0..10000 {
         hs.insert(i);
     }

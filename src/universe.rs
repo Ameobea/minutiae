@@ -4,14 +4,16 @@
 //! 1 means that they have knowledge of all neighbors touching them (including diagonals), etc.
 
 use std::cell::Cell as RustCell;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::marker::PhantomData;
+
+use uuid::Uuid;
 
 use cell::{Cell, CellState};
 use entity::{Entity, EntityState, MutEntityState};
 use generator::Generator;
-use action::{Action, CellAction, EntityAction};
+use action::{Action, CellAction, SelfAction, EntityAction};
 
 #[derive(Clone)]
 pub struct UniverseConf {
@@ -42,14 +44,16 @@ pub struct Universe<C: CellState, E: EntityState<C>, M: MutEntityState, CA: Cell
         mut_state: &RustCell<M>,
         entities: &[Vec<Entity<C, E, M>>],
         cells: &[Cell<C>],
-        action_executor: &mut FnMut(Action<C, E, CA, EA>)
+        cell_action_executor: &mut FnMut(CA, isize, isize),
+        self_action_executor: &mut FnMut(SelfAction<C, E, EA>),
+        entity_action_executor: &mut FnMut(EA, isize, isize)
     ),
 
     pub seq: usize,
     pub cells: Vec<Cell<C>>,
     pub entities: Vec<Vec<Entity<C, E, M>>>,
     // Contains the indices of all grid cells that contain entities.
-    pub entity_meta: HashSet<usize>,
+    pub entity_meta: HashMap<Uuid, (usize, usize)>,
     // these two values are used for pre-allocating space on the action buffer based on average actions per cycle
     pub average_actions_per_cycle: usize,
     pub total_actions: usize,
@@ -70,7 +74,9 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: 
             mut_state: &RustCell<M>,
             entities: &[Vec<Entity<C, E, M>>],
             cells: &[Cell<C>],
-            action_executor: &mut FnMut(Action<C, E, CA, EA>)
+            cell_action_executor: &mut FnMut(CA, isize, isize),
+            self_action_executor: &mut FnMut(SelfAction<C, E, EA>),
+            entity_action_executor: &mut FnMut(EA, isize, isize)
         )
     ) -> Universe<C, E, M, CA, EA> {
         assert!(conf.size > 0);
@@ -82,7 +88,7 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: 
             seq: 0,
             cells: Vec::new(),
             entities: Vec::new(),
-            entity_meta: HashSet::new(),
+            entity_meta: HashMap::new(),
             average_actions_per_cycle: 0,
             total_actions: 0,
             average_unique_entities_modified_per_cycle: 0,
