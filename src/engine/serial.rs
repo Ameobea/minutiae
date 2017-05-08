@@ -4,7 +4,7 @@
 use universe::{Universe, UniverseConf};
 use cell::{Cell, CellState};
 use entity::{Entity, EntityState, MutEntityState};
-use action::{Action, TypedAction, CellAction, EntityAction};
+use action::{Action, OwnedAction, CellAction, EntityAction};
 use util::{get_coords, get_index};
 use super::Engine;
 use super::iterator::{GridIterator, EntityIterator};
@@ -17,7 +17,7 @@ pub trait SerialEngine<
 
     fn iter_entities(&self, &[Vec<Entity<C, E, M>>]) -> EI;
 
-    fn exec_actions(&self, &mut Universe<C, E, M, CA, EA>, &[Action<C, E, CA, EA>]);
+    fn exec_actions(&self, &mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>]);
 }
 
 impl<
@@ -43,33 +43,27 @@ impl<
         let entity_iterator: &mut EntityIterator<C, E, M> = &mut self.iter_entities(&universe.entities);
         while let Some((universe_index, entity_index)) = entity_iterator.visit(&universe.entities) {
             let (cur_x, cur_y) = get_coords(universe_index, size);
-            let cur_x = cur_x as isize;
-            let cur_y = cur_y as isize;
             let size = size as isize;
 
             let mut action_count = 0;
             {
                 let mut action_executor = |mut action: Action<C, E, CA, EA>| {
-                    // set the x and y offsets to universe and entity index for self actions
-                    match action.action {
-                        TypedAction::SelfAction(_) => {
-                            action.x_offset = universe_index as isize;
-                            action.y_offset = entity_index as isize;
-                        },
-                        _ => (),
-                    }
-
                     action_count += 1;
+                    let owned_action = OwnedAction {
+                        source_universe_index: universe_index,
+                        source_entity_index: entity_index,
+                        action: action,
+                    };
                     if action_buf.len() < action_count {
-                        action_buf.push(action);
+                        action_buf.push(owned_action);
                     } else {
-                        action_buf[action_count - 1] = action;
+                        action_buf[action_count - 1] = owned_action;
                     }
                 };
 
                 let mut entity = &universe.entities[universe_index][entity_index];
                 (universe.entity_driver)(
-                    &entity.state, &entity.mut_state, &universe.entities, &universe.cells, &mut action_executor
+                    cur_x, cur_y, &entity.state, &entity.mut_state, &universe.entities, &universe.cells, &mut action_executor
                 );
             }
             self.exec_actions(&mut universe, action_buf.as_slice().split_at(action_count).0);

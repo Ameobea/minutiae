@@ -24,7 +24,7 @@ mod driver;
 use universe::{Universe, UniverseConf};
 use cell::{Cell, CellState};
 use entity::{Entity, EntityState, MutEntityState};
-use action::{Action, CellAction, EntityAction, TypedAction, SelfAction};
+use action::{Action, CellAction, EntityAction, OwnedAction, SelfAction};
 use engine::Engine;
 use engine::serial::SerialEngine;
 use engine::iterator::{SerialGridIterator, SerialEntityIterator};
@@ -33,7 +33,7 @@ use util::{get_coords, get_index};
 use driver::{Driver, BasicDriver};
 use driver::middleware::{UniverseDisplayer, Delay};
 
-const UNIVERSE_SIZE: usize = 15;
+const UNIVERSE_SIZE: usize = 36;
 
 #[derive(Clone)]
 enum OurCellState {
@@ -112,26 +112,43 @@ impl SerialEngine<
     fn exec_actions(
         &self,
         universe: &mut Universe<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, OurEntityAction>,
-        actions: &[Action<OurCellState, OurEntityState, OurCellAction, OurEntityAction>]
+        actions: &[OwnedAction<OurCellState, OurEntityState, OurCellAction, OurEntityAction>]
     ) {
         for action in actions {
-            match action.action {
-                TypedAction::SelfAction(ref self_action) => {
+            match &action.action {
+                &Action::SelfAction(ref self_action) => {
                     match self_action {
                         &SelfAction::Translate(x_offset, y_offset) => {
-                            let (cur_x, cur_y) = get_coords(action.x_offset as usize, UNIVERSE_SIZE);
+                            let (cur_universe_index, cur_entity_index) = (action.source_universe_index, action.source_entity_index);
+                            let (cur_x, cur_y) = get_coords(cur_universe_index, UNIVERSE_SIZE);
                             let new_x = cur_x as isize + x_offset;
                             let new_y = cur_y as isize + y_offset;
-                            println!("{}, {}", new_x, new_y);
+                            // println!("{}, {}", new_x, new_y);
                             if new_x >= 0 && new_x < UNIVERSE_SIZE as isize && new_y >= 0 && new_y < UNIVERSE_SIZE as isize {
-                                println!("Removed entity from {}, {}", action.x_offset, action.y_offset);
                                 let new_index = get_index(new_x as usize, new_y as usize, UNIVERSE_SIZE);
-                                let entity = universe.entities[action.x_offset as usize].remove(action.y_offset as usize);
+                                let entity = universe.entities[cur_universe_index].remove(cur_entity_index);
                                 universe.entities[new_index].push(entity);
-                                println!("Moved entity to {}, {}", new_x, new_y);
+                                // println!("Moved entity to {}, {}", new_x, new_y);
                             }
                         }
                         _ => unimplemented!(),
+                    }
+                },
+                &Action::CellAction{action: ref cell_action, x_offset, y_offset} => {
+                    let (cur_universe_index, _) = (action.source_universe_index, action.source_entity_index);
+                    let (cur_x, cur_y) = get_coords(cur_universe_index, UNIVERSE_SIZE);
+                    let cell_x = cur_x as isize + x_offset;
+                    let cell_y = cur_y as isize + y_offset;
+                    if cell_x >= 0 && cell_x < UNIVERSE_SIZE as isize && cell_y >= 0 && cell_y < UNIVERSE_SIZE as isize {
+                        let cell_index = get_index(cell_x as usize, cell_y as usize, UNIVERSE_SIZE);
+                        match cell_action {
+                            &OurCellAction::Create => {
+                                universe.cells[cell_index].state = OurCellState::Filled;
+                            },
+                            &OurCellAction::Destroy => {
+                                universe.cells[cell_index].state = OurCellState::Empty;
+                            }
+                        }
                     }
                 }
                 _ => unimplemented!(),
@@ -180,6 +197,8 @@ fn our_cell_mutator<'a>(index: usize, cells: &[Cell<OurCellState>]) -> Option<Ou
 }
 
 fn our_entity_driver<'a>(
+    cur_x: usize,
+    cur_y: usize,
     state: &OurEntityState,
     mut_state: &RustCell<OurMutEntityState>,
     entities: &[Vec<Entity<OurCellState, OurEntityState, OurMutEntityState>>],
@@ -187,12 +206,33 @@ fn our_entity_driver<'a>(
     action_executor: &mut FnMut(Action<OurCellState, OurEntityState, OurCellAction, OurEntityAction>),
 ) {
     let mut mut_state_inner = mut_state.take();
-    let action = {
-        let rng = mut_state_inner.rng.as_mut().unwrap();
-        Action::mut_self(SelfAction::translate(rng.gen_range(-1, 2), rng.gen_range(-1, 2)))
-    };
+
+    {
+        let mut rng = mut_state_inner.rng.as_mut().unwrap();
+        let (x_offset, y_offset) = (rng.gen_range(-1, 2), rng.gen_range(-1, 2));
+        let action = Action::SelfAction(SelfAction::translate(x_offset, y_offset));
+        action_executor(action);
+
+        if rng.next_u32() > !(1u32 << 31) {
+            let (x_offset, y_offset) = (-x_offset, -y_offset);
+            let (target_x, target_y) = (cur_x as isize + x_offset, cur_y as isize + y_offset);
+            if target_x >= 0 && target_x < UNIVERSE_SIZE as isize && target_y >= 0 && target_y < UNIVERSE_SIZE as isize {
+                let target_index = get_index(target_x as usize, target_y as usize, UNIVERSE_SIZE);
+                let cell_action = match cells[target_index].state {
+                    OurCellState::Empty => OurCellAction::Create,
+                    OurCellState::Filled => OurCellAction::Destroy,
+                };
+                let action = Action::CellAction{
+                    action: cell_action,
+                    x_offset: x_offset,
+                    y_offset: y_offset
+                };
+                action_executor(action);
+            }
+        }
+    }
+
     mut_state.set(mut_state_inner);
-    action_executor(action);
 }
 
 fn main() {
@@ -210,7 +250,7 @@ fn main() {
     );
 
     let driver = BasicDriver::new();
-    driver.init(universe, engine, &mut [Box::new(UniverseDisplayer {}), Box::new(Delay(80))]);
+    driver.init(universe, engine, &mut [/*Box::new(UniverseDisplayer {}), Box::new(Delay(80))*/]);
 }
 
 #[bench]

@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use cell::{Cell, CellState};
 use entity::{Entity, EntityState, MutEntityState};
 use generator::Generator;
-use action::{Action, CellAction, EntityAction};
+use action::{Action, OwnedAction, CellAction, EntityAction};
 
 #[derive(Clone)]
 pub struct UniverseConf {
@@ -35,11 +35,13 @@ pub struct Universe<C: CellState, E: EntityState<C>, M: MutEntityState, CA: Cell
     pub cell_mutator: fn(usize, &[Cell<C>]) -> Option<C>,
     // function that determines the behaviour of entities.
     pub entity_driver: fn(
-        &E,
-        &RustCell<M>,
-        &[Vec<Entity<C, E, M>>],
-        &[Cell<C>],
-        &mut FnMut(Action<C, E, CA, EA>)
+        cur_x: usize,
+        cur_x: usize,
+        entity: &E,
+        mut_state: &RustCell<M>,
+        entities: &[Vec<Entity<C, E, M>>],
+        cells: &[Cell<C>],
+        action_executor: &mut FnMut(Action<C, E, CA, EA>)
     ),
 
     pub seq: usize,
@@ -54,11 +56,13 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: 
         conf: UniverseConf, gen: &mut Generator<C, E, M, CA, EA>,
         cell_mutator: fn(usize, &[Cell<C>]) -> Option<C>,
         entity_driver: fn(
-            &E,
-            &RustCell<M>,
-            &[Vec<Entity<C, E, M>>],
-            &[Cell<C>],
-            &mut FnMut(Action<C, E, CA, EA>)
+            cur_x: usize,
+            cur_x: usize,
+            entity: &E,
+            mut_state: &RustCell<M>,
+            entities: &[Vec<Entity<C, E, M>>],
+            cells: &[Cell<C>],
+            action_executor: &mut FnMut(Action<C, E, CA, EA>)
         )
     ) -> Universe<C, E, M, CA, EA> {
         assert!(conf.size > 0);

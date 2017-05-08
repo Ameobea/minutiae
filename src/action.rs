@@ -7,18 +7,25 @@ use std::marker::PhantomData;
 use entity::EntityState;
 use cell::CellState;
 
-pub struct Action<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>>  {
-    pub x_offset: isize,
-    pub y_offset: isize,
-    pub action: TypedAction<C, E, CA, EA>,
-    __phantom_c: PhantomData<C>,
-    __phantom_e: PhantomData<E>,
+/// An action that is associated with a particular entity
+pub struct OwnedAction<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> {
+    pub source_universe_index: usize,
+    pub source_entity_index: usize,
+    pub action: Action<C, E, CA, EA>,
 }
 
 #[allow(non_camel_case_types)]
-pub enum TypedAction<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>>  {
-    CellAction(CA),
-    EntityAction(EA),
+pub enum Action<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>>  {
+    CellAction {
+        action: CA,
+        x_offset: isize,
+        y_offset: isize,
+    },
+    EntityAction {
+        action: EA,
+        x_offset: isize,
+        y_offset: isize,
+    },
     SelfAction(SelfAction<C, E, EA>),
     __phantom_c(PhantomData<C>),
     __phantom_e(PhantomData<E>),
@@ -31,6 +38,7 @@ pub trait CellAction<C: CellState> {}
 pub trait EntityAction<C: CellState, E: EntityState<C>> {}
 
 /// An attempt of an entity to mutate itself.
+#[allow(non_camel_case_types)]
 pub enum SelfAction<C: CellState, E: EntityState<C>, EA: EntityAction<C, E>> {
     Translate(isize, isize),
     Suicide,
@@ -42,17 +50,5 @@ pub enum SelfAction<C: CellState, E: EntityState<C>, EA: EntityAction<C, E>> {
 impl<C: CellState, E: EntityState<C>, EA: EntityAction<C, E>> SelfAction<C, E, EA> {
     pub fn translate(x: isize, y: isize) -> SelfAction<C, E, EA> {
         SelfAction::Translate(x, y)
-    }
-}
-
-impl<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> Action<C, E, CA, EA> {
-    pub fn mut_self(self_action: SelfAction<C, E, EA>) -> Action<C, E, CA, EA> {
-        Action {
-            x_offset: 0,
-            y_offset: 0,
-            action: TypedAction::SelfAction(self_action),
-            __phantom_c: PhantomData,
-            __phantom_e: PhantomData,
-        }
     }
 }
