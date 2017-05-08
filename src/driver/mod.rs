@@ -52,13 +52,13 @@ impl<
         println!("Starting simulation driver...");
         loop {
             for mut m in middleware.iter_mut() {
-                m.before_render(&universe);
+                m.before_render(&mut universe);
             }
 
             engine.step(&mut universe);
 
             for m in middleware.iter_mut() {
-                m.after_render(&universe);
+                m.after_render(&mut universe);
             }
         }
     }
