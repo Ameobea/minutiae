@@ -1,5 +1,6 @@
 //! Defines an object that iterates over of a universe in some order.
 
+use std::collections::HashSet;
 use std::marker::PhantomData;
 
 use cell::CellState;
@@ -56,7 +57,7 @@ impl GridIterator for SerialGridIterator {
 /// Visits the entities of a universe in a particular order, returning the index of the cell the entity inhabits
 /// as well as the index of the entity within that cell (since there can be multiple entities in one cell).
 pub trait EntityIterator<C: CellState, E: EntityState<C>, M: MutEntityState> {
-    fn visit(&mut self, entities: &[Vec<Entity<C, E, M>>]) -> Option<(usize, usize)>;
+    fn visit(&mut self, entities: &[Vec<Entity<C, E, M>>], entity_meta: &HashSet<usize>) -> Option<(usize, usize)>;
 }
 
 pub struct SerialEntityIterator<C: CellState, E: EntityState<C>> {
@@ -82,9 +83,9 @@ impl<C: CellState, E: EntityState<C>> SerialEntityIterator<C, E> {
 }
 
 fn access_entity<C: CellState, E: EntityState<C>, M: MutEntityState>(
-    entities: &[Vec<Entity<C, E, M>>], universe_index: usize, entity_index: usize
+    entity_meta: &HashSet<usize>, entities: &[Vec<Entity<C, E, M>>], universe_index: usize, entity_index: usize
 ) -> bool {
-    if universe_index < entities.len() && entity_index < entities[universe_index].len() {
+    if entity_meta.contains(&universe_index) && entities[universe_index].len() > entity_index {
         true
     } else {
         false
@@ -92,17 +93,17 @@ fn access_entity<C: CellState, E: EntityState<C>, M: MutEntityState>(
 }
 
 impl<C: CellState, E: EntityState<C>, M: MutEntityState> EntityIterator<C, E, M> for SerialEntityIterator<C, E> {
-    fn visit(&mut self, entities: &[Vec<Entity<C, E, M>>]) -> Option<(usize, usize)> {
+    fn visit(&mut self, entities: &[Vec<Entity<C, E, M>>], entity_meta: &HashSet<usize>) -> Option<(usize, usize)> {
         if self.done {
             self.done = false;
             self.universe_index = 0;
             self.entity_index = 0;
 
-            if access_entity(entities, 0, 0) {
+            if access_entity(entity_meta, entities, 0, 0) {
                 return Some((0, 0));
             }
         } else {
-            if access_entity(entities, self.universe_index, self.entity_index + 1) {
+            if access_entity(entity_meta, entities, self.universe_index, self.entity_index + 1) {
                 self.entity_index += 1;
                 return Some((self.universe_index, self.entity_index))
             } else {
@@ -113,7 +114,7 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> EntityIterator<C, E, M>
         // iterate over the remaining indexes of the universe and return the coordinates of the first found entity
         while self.universe_index < self.universe_length {
             self.universe_index += 1;
-            if access_entity(entities, self.universe_index, 0) {
+            if access_entity(entity_meta, entities, self.universe_index, 0) {
                 return Some((self.universe_index, 0))
             }
         }

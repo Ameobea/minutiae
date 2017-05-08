@@ -4,13 +4,14 @@
 //! 1 means that they have knowledge of all neighbors touching them (including diagonals), etc.
 
 use std::cell::Cell as RustCell;
+use std::collections::HashSet;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::marker::PhantomData;
 
 use cell::{Cell, CellState};
 use entity::{Entity, EntityState, MutEntityState};
 use generator::Generator;
-use action::{Action, OwnedAction, CellAction, EntityAction};
+use action::{Action, CellAction, EntityAction};
 
 #[derive(Clone)]
 pub struct UniverseConf {
@@ -47,6 +48,8 @@ pub struct Universe<C: CellState, E: EntityState<C>, M: MutEntityState, CA: Cell
     pub seq: usize,
     pub cells: Vec<Cell<C>>,
     pub entities: Vec<Vec<Entity<C, E, M>>>,
+    // Contains the indices of all grid cells that contain entities.
+    pub entity_meta: HashSet<usize>,
     __phantom_ca: PhantomData<CA>,
     __phantom_ea: PhantomData<EA>,
 }
@@ -74,12 +77,13 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: 
             seq: 0,
             cells: Vec::new(),
             entities: Vec::new(),
+            entity_meta: HashSet::new(),
             __phantom_ca: PhantomData,
             __phantom_ea: PhantomData,
         };
 
         // use the generator to generate an initial layout of cells and entities with which to populate the world
-        let (cells, entities) = gen.gen(&universe.conf);
+        let (cells, entities, entity_meta) = gen.gen(&universe.conf);
 
         universe.cells = cells;
         universe.entities = entities;

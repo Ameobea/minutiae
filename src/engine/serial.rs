@@ -41,7 +41,7 @@ impl<
         // and applying the results immediately based on its rules
         let mut action_buf = Vec::new(); // TODO: Preserve between iterations
         let entity_iterator: &mut EntityIterator<C, E, M> = &mut self.iter_entities(&universe.entities);
-        while let Some((universe_index, entity_index)) = entity_iterator.visit(&universe.entities) {
+        while let Some((universe_index, entity_index)) = entity_iterator.visit(&universe.entities, &universe.entity_meta) {
             let (cur_x, cur_y) = get_coords(universe_index, size);
             let size = size as isize;
 
