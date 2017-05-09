@@ -19,7 +19,7 @@ use action::{Action, CellAction, SelfAction, EntityAction};
 pub struct UniverseConf {
     pub view_distance: usize,
     pub size: usize,
-    pub overlapping_entities: bool, // if true, multiple entities can reside on the same coordinate simulaneously.
+    pub iter_cells: bool,
 }
 
 impl Default for UniverseConf {
@@ -27,7 +27,7 @@ impl Default for UniverseConf {
         UniverseConf {
             view_distance: 1,
             size: 8000,
-            overlapping_entities: true,
+            iter_cells: false,
         }
     }
 }
@@ -46,7 +46,7 @@ pub struct Universe<C: CellState, E: EntityState<C>, M: MutEntityState, CA: Cell
         cells: &[Cell<C>],
         cell_action_executor: &mut FnMut(CA, isize, isize),
         self_action_executor: &mut FnMut(SelfAction<C, E, EA>),
-        entity_action_executor: &mut FnMut(EA, isize, isize)
+        entity_action_executor: &mut FnMut(EA, isize, isize, Uuid)
     ),
 
     pub seq: usize,
@@ -76,7 +76,7 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: 
             cells: &[Cell<C>],
             cell_action_executor: &mut FnMut(CA, isize, isize),
             self_action_executor: &mut FnMut(SelfAction<C, E, EA>),
-            entity_action_executor: &mut FnMut(EA, isize, isize)
+            entity_action_executor: &mut FnMut(EA, isize, isize, Uuid)
         )
     ) -> Universe<C, E, M, CA, EA> {
         assert!(conf.size > 0);

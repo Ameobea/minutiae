@@ -30,6 +30,7 @@ pub enum Action<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAc
         action: EA,
         x_offset: isize,
         y_offset: isize,
+        target_uuid: Uuid,
     },
     SelfAction(SelfAction<C, E, EA>),
     __phantom_c(PhantomData<C>),

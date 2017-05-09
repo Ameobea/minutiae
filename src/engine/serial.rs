@@ -9,6 +9,8 @@ use util::get_index;
 use super::Engine;
 use super::iterator::{GridIterator, EntityIterator};
 
+use uuid::Uuid;
+
 pub trait SerialEngine<
     C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>,
     EA: EntityAction<C, E>, CI: GridIterator, EI: EntityIterator<C, E, M>
@@ -26,14 +28,16 @@ impl<
 > Engine<C, E, M, CA, EA> for Box<SerialEngine<C, E, M, CA, EA, CI, EI>> {
     // #[inline(never)]
     fn step<'a>(&'a mut self, mut universe: &'a mut Universe<C, E, M, CA, EA>) {
-        let UniverseConf{view_distance: _, size, overlapping_entities: _} = universe.conf;
+        let UniverseConf{view_distance: _, size, iter_cells} = universe.conf;
 
         // iterate over the universe's cells one at a time, applying their state transitions immediately
-        let cell_iterator: &mut GridIterator = &mut self.iter_cells(&universe.cells);
-        for index in cell_iterator {
-            match (universe.cell_mutator)(index, &universe.cells) {
-                Some(new_state) => universe.cells[index].state = new_state,
-                None => (),
+        if iter_cells {
+            let cell_iterator: &mut GridIterator = &mut self.iter_cells(&universe.cells);
+            for index in cell_iterator {
+                match (universe.cell_mutator)(index, &universe.cells) {
+                    Some(new_state) => universe.cells[index].state = new_state,
+                    None => (),
+                }
             }
         }
 
@@ -76,7 +80,7 @@ impl<
                 self_action_buf.push(owned_action);
             };
 
-            let mut entity_action_executor = |entity_action: EA, x_offset: isize, y_offset: isize| {
+            let mut entity_action_executor = |entity_action: EA, x_offset: isize, y_offset: isize, target_uuid: Uuid| {
                 let owned_action = OwnedAction {
                     source_universe_index: universe_index,
                     source_entity_index: entity_index,
@@ -85,6 +89,7 @@ impl<
                         x_offset: x_offset,
                         y_offset: y_offset,
                         action: entity_action,
+                        target_uuid: target_uuid,
                     },
                 };
 

@@ -22,6 +22,11 @@ pub fn manhattan_distance(x1: usize, y1: usize, x2: usize, y2: usize) -> usize {
     x_diff + y_diff
 }
 
+/// Calculates the offset between two coordinates; where point 2 is located relative to point 1
+pub fn calc_offset(x1: usize, y1: usize, x2: usize, y2: usize) -> (isize, isize) {
+    (x1 as isize - x2 as isize, y1 as isize - y2 as isize)
+}
+
 struct VisibleIterator {
     universe_size: usize,
     min_x: usize,
