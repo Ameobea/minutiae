@@ -4,11 +4,9 @@ version = "0.1.0"
 authors = ["Casey Primozic <me@ameo.link>"]
 
 [dependencies]
-itertools = "0.6.0"
 rand = "0.3"
 pcg = { git = "https://github.com/codahale/pcg.git" }
 uuid = { version = "0.5.0", features = ["v4"] }
-
 
 [profile.release]
 debug = true

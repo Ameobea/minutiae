@@ -1,7 +1,11 @@
 //! General-purpose utility functions
 
-use std::iter::Chain;
-use itertools::chain;
+use std::collections::HashMap;
+
+use uuid::Uuid;
+
+use cell::CellState;
+    use entity::{Entity, EntityState, MutEntityState};
 
 /// Given an index of the universe and the universe's size returns X and Y coordinates.
 pub fn get_coords(index: usize, size: usize) -> (usize, usize) {
@@ -24,20 +28,60 @@ pub fn manhattan_distance(x1: usize, y1: usize, x2: usize, y2: usize) -> usize {
 
 /// Calculates the offset between two coordinates; where point 2 is located relative to point 1
 pub fn calc_offset(x1: usize, y1: usize, x2: usize, y2: usize) -> (isize, isize) {
-    (x1 as isize - x2 as isize, y1 as isize - y2 as isize)
+    (x2 as isize - x1 as isize, y2 as isize - y1 as isize)
+}
+
+/// Searches one coordinate of the universe and attempts to find the entity ID of the entity with the supplied UUID.
+pub fn locate_entity_simple<C: CellState, E: EntityState<C>, M: MutEntityState>(
+    uuid: Uuid, entities: &[Entity<C, E, M>]
+) -> Option<usize> {
+    entities.iter().position(|& ref entity| entity.uuid == uuid)
+}
+
+pub enum EntityLocation {
+    Deleted, // entity no longer exists
+    Expected(usize), // entity is where it's expecte to be with the returned entity index
+    Moved(usize, usize, usize), // entity moved to (arg 0, arg 1) with entity index arg 2
+}
+
+/// Attempts to find the entity index of an entity with a specific UUID and a set of coordinates where it is expected to
+/// be located.
+pub fn locate_entity<C: CellState, E: EntityState<C>, M: MutEntityState>(
+    entities: &[Vec<Entity<C, E, M>>], uuid: Uuid, expected_index: usize, entity_meta: &HashMap<Uuid, (usize, usize)>,
+    universe_size: usize,
+) -> EntityLocation {
+    debug_assert!(expected_index < (universe_size * universe_size));
+    // first attempt to find the entity at its expected coordinates
+    match locate_entity_simple(uuid, &entities[expected_index]) {
+        Some(entity_index) => EntityLocation::Expected(entity_index),
+        None => {
+            // unable to locate entity at its expected coordinates, so check the coordinates in the meta `HashMap`
+            match entity_meta.get(&uuid) {
+                Some(&(real_x, real_y)) => {
+                    let real_index = get_index(real_x, real_y, universe_size);
+                    let entity_index = locate_entity_simple(uuid, &entities[real_index])
+                        .expect("Entity not present at coordinates listed in meta `HashMap`!");
+
+                    EntityLocation::Moved(real_x, real_y, entity_index)
+                },
+                // If no entry in the `HashMap`, then the entity has been deleted.
+                None => EntityLocation::Deleted,
+            }
+        }
+    }
 }
 
 struct VisibleIterator {
-    universe_size: usize,
     min_x: usize,
     max_x: usize,
-    min_y: usize,
     max_y: usize,
     cur_x: usize,
     cur_y: usize,
     first: bool,
 }
 
+// TODO: Optimize this.  The `if self.first` branch is one of the most expensive lines of code in this whole app
+//       there's probably a way to make this work without any branches at all tbh.
 impl Iterator for VisibleIterator {
     type Item = (usize, usize);
 
@@ -72,9 +116,7 @@ pub fn iter_visible(cur_x: usize, cur_y: usize, view_distance: usize, universe_s
     let max_x = if cur_x + view_distance < universe_size { cur_x + view_distance } else { universe_size - 1 };
 
     VisibleIterator {
-        universe_size: universe_size,
         min_x: min_x,
-        min_y: min_y,
         max_x: max_x,
         max_y: max_y,
         cur_x: min_x,
