@@ -7,6 +7,7 @@ use std::clone::Clone;
 use std::fmt::{self, Debug, Formatter};
 use std::marker::PhantomData;
 
+#[allow(unused_imports)]
 use test;
 use uuid::Uuid;
 
@@ -57,19 +58,4 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> Entity<C, E, M> {
 #[bench]
 fn uuid_v4(b: &mut test::Bencher) {
     b.iter(|| Uuid::new_v4())
-}
-
-#[bench]
-fn uuid_pcg(b: &mut test::Bencher) {
-    use pcg::PcgRng;
-    use rand::Rng;
-
-    let mut rng = PcgRng::new_unseeded();
-    rng.set_stream(9182837465);
-    let mut buf = vec![0u8; 16];
-
-    b.iter(|| {
-        rng.fill_bytes(&mut buf);
-        Uuid::from_bytes(&buf)
-    })
 }

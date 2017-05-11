@@ -1,11 +1,13 @@
 //! A place to experiment with the ideas and concepts of the Minuate simulation
 
-#![feature(conservative_impl_trait, test)]
+#![feature(alloc_system, conservative_impl_trait, test)]
 
+extern crate alloc_system;
 extern crate rand;
 extern crate pcg;
 extern crate test;
 extern crate uuid;
+extern crate minutae;
 
 use std::cell::Cell as RustCell;
 use std::fmt::{self, Display, Formatter};
@@ -15,31 +17,22 @@ use pcg::PcgRng;
 use rand::Rng;
 use uuid::Uuid;
 
-mod universe;
-mod cell;
-mod entity;
-mod action;
-mod engine;
-mod generator;
-mod util;
-mod driver;
-
-use universe::{Universe, UniverseConf};
-use cell::{Cell, CellState};
-use entity::{Entity, EntityState, MutEntityState};
-use action::{Action, CellAction, EntityAction, OwnedAction, SelfAction};
-use engine::Engine;
-use engine::serial::SerialEngine;
-use engine::iterator::{SerialGridIterator, SerialEntityIterator};
-use generator::Generator;
-use util::{
+use minutae::universe::{Universe, UniverseConf};
+use minutae::cell::{Cell, CellState};
+use minutae::entity::{Entity, EntityState, MutEntityState};
+use minutae::action::{Action, CellAction, EntityAction, OwnedAction, SelfAction};
+use minutae::engine::Engine;
+use minutae::engine::serial::SerialEngine;
+use minutae::engine::iterator::{SerialGridIterator, SerialEntityIterator};
+use minutae::generator::Generator;
+use minutae::util::{
     calc_offset, get_coords, get_index, iter_visible, manhattan_distance,
     locate_entity, locate_entity_simple, EntityLocation
 };
-use driver::{Driver, BasicDriver};
-use driver::middleware::{Middleware, UniverseDisplayer, Delay};
+use minutae::driver::{Driver, BasicDriver};
+use minutae::driver::middleware::{Middleware, UniverseDisplayer, Delay};
 
-const TICK_DELAY_MS: u64 = 50;
+const TICK_DELAY_MS: u64 = 1000;
 const UNIVERSE_SIZE: usize = 38;
 const FISH_COUNT: usize = 150;
 const PREDATOR_COUNT: usize = 2;
@@ -612,7 +605,7 @@ impl Middleware<
                 let target_x = food_spawn_x as isize + spawn_x_offset as isize;
                 let spawn_y_offset = rng.gen_range(-FOOD_SPAWN_RADIUS, FOOD_SPAWN_RADIUS);
                 let target_y = food_spawn_y as isize + spawn_y_offset as isize;
-                
+
                 if target_x >= 0 && target_x < UNIVERSE_SIZE as isize && target_y >= 0 && target_y < UNIVERSE_SIZE as isize {
                     let target_index = get_index(target_x as usize, target_y as usize, UNIVERSE_SIZE);
                     universe.cells[target_index].state = OurCellState::Food;
@@ -634,11 +627,13 @@ impl FoodSpawnerMiddleware {
 }
 
 fn main() {
+    use minutae::universe;
+
     let mut conf = universe::UniverseConf::default();
     conf.size = UNIVERSE_SIZE;
     let engine: OurEngineType = Box::new(OurEngine {});
 
-    let universe = Universe::new(
+    let universe = universe::Universe::new(
         conf,
         &mut OurWorldGenerator(19093929992071),
         our_cell_mutator,
@@ -655,6 +650,8 @@ fn main() {
 
 #[bench]
 fn universe_step(b: &mut test::Bencher) {
+    use minutae::universe;
+
     let mut conf = universe::UniverseConf::default();
     conf.size = UNIVERSE_SIZE;
     let mut engine: Box<
@@ -692,5 +689,20 @@ fn hashset_remove_insert(b: &mut test::Bencher) {
             hs.remove(&i);
             hs.insert(i - 1);
         }
+    })
+}
+
+#[bench]
+fn uuid_pcg(b: &mut test::Bencher) {
+    use pcg::PcgRng;
+    use rand::Rng;
+
+    let mut rng = PcgRng::new_unseeded();
+    rng.set_stream(9182837465);
+    let mut buf = vec![0u8; 16];
+
+    b.iter(|| {
+        rng.fill_bytes(&mut buf);
+        Uuid::from_bytes(&buf)
     })
 }

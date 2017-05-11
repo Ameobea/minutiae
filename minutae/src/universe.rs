@@ -13,7 +13,7 @@ use uuid::Uuid;
 use cell::{Cell, CellState};
 use entity::{Entity, EntityState, MutEntityState};
 use generator::Generator;
-use action::{Action, CellAction, SelfAction, EntityAction};
+use action::{CellAction, SelfAction, EntityAction};
 
 #[derive(Clone)]
 pub struct UniverseConf {
