@@ -1,6 +1,8 @@
 //! A simulation engine that simulates all changes to the universe sequentially.  This is the most simple
 //! engine but doens't take advantage of any possible benifits from things like multithreading.
 
+use rayon::prelude::*;
+
 use universe::{Universe, UniverseConf};
 use cell::{Cell, CellState};
 use entity::{Entity, EntityState, MutEntityState};
@@ -47,21 +49,20 @@ impl<
         let mut cell_action_buf: Vec<OwnedAction<C, E, CA, EA>>   = Vec::new();
         let mut self_action_buf: Vec<OwnedAction<C, E, CA, EA>>   = Vec::new();
         let mut entity_action_buf: Vec<OwnedAction<C, E, CA, EA>> = Vec::new();
-        for (uuid, &(cur_x, cur_y)) in universe.entity_meta.iter() {
+        for (uuid, &(cur_x, cur_y)) in universe.entities.iter() {
             let universe_index = get_index(cur_x, cur_y, size);
             let entity_index = universe.entities[universe_index]
                 .iter()
                 .position(|& ref entity| entity.uuid == *uuid)
                 .expect("The requested entity is not found at any index at the specified universe index!");
 
-            let mut cell_action_executor = |cell_action: CA, x_offset: isize, y_offset: isize| {
+            let mut cell_action_executor = |cell_action: CA, universe_index: usize| {
                 let owned_action = OwnedAction {
                     source_universe_index: universe_index,
                     source_entity_index: entity_index,
-                    source_uuid: universe.entities[universe_index][entity_index].uuid,
+                    source_position_index: universe.entities[universe_index][entity_index].uuid,
                     action: Action::CellAction {
-                        x_offset: x_offset,
-                        y_offset: y_offset,
+                        universe_index: universe_index,
                         action: cell_action,
                     },
                 };

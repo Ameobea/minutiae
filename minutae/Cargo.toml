@@ -9,8 +9,7 @@ keywords = ["simulation", "automata", "engine", "entity"]
 license = "MIT"
 
 [dependencies]
-rand = "0.3"
-uuid = { version = "0.5.0", features = ["v4"] }
+rayon = "0.7.0"
 
 [profile.release]
 debug = true

@@ -2,9 +2,8 @@
 
 #![feature(conservative_impl_trait, test)]
 
-extern crate rand;
 extern crate test;
-extern crate uuid;
+extern crate rayon;
 
 pub mod universe;
 pub mod cell;

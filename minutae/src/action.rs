@@ -4,8 +4,6 @@
 
 use std::marker::PhantomData;
 
-use uuid::Uuid;
-
 use entity::EntityState;
 use cell::CellState;
 
@@ -14,7 +12,7 @@ use cell::CellState;
 pub struct OwnedAction<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> {
     pub source_universe_index: usize,
     pub source_entity_index: usize,
-    pub source_uuid: Uuid,
+    pub source_position_index: usize,
     pub action: Action<C, E, CA, EA>,
 }
 
@@ -23,14 +21,12 @@ pub struct OwnedAction<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: E
 pub enum Action<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>>  {
     CellAction {
         action: CA,
-        x_offset: isize,
-        y_offset: isize,
+        universe_index: usize,
     },
     EntityAction {
         action: EA,
-        x_offset: isize,
-        y_offset: isize,
-        target_uuid: Uuid,
+        universe_index: usize,
+        target_entity_id: usize,
     },
     SelfAction(SelfAction<C, E, EA>),
     __phantom_c(PhantomData<C>),
