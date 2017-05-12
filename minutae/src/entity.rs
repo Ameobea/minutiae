@@ -7,6 +7,8 @@ use std::clone::Clone;
 use std::fmt::{self, Debug, Formatter};
 use std::marker::PhantomData;
 
+use uuid::Uuid;
+
 #[allow(unused_imports)]
 use test;
 
@@ -19,6 +21,7 @@ pub trait MutEntityState:Clone + Default {}
 pub struct Entity<C: CellState, S: EntityState<C>, M: MutEntityState> {
     pub state: S,
     pub mut_state: RustCell<M>,
+    pub uuid: Uuid,
     phantom: PhantomData<C>,
 }
 
@@ -36,6 +39,7 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> Clone for Entity<C, E, 
         Entity {
             state: self.state.clone(),
             mut_state: RustCell::new(mut_state_inner),
+            uuid: Uuid::new_v4(),
             phantom: PhantomData,
         }
     }
@@ -46,6 +50,7 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> Entity<C, E, M> {
         Entity {
             state: state,
             mut_state: RustCell::new(mut_state),
+            uuid: Uuid::new_v4(),
             phantom: PhantomData,
         }
     }

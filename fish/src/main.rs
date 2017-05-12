@@ -17,7 +17,7 @@ use pcg::PcgRng;
 use rand::Rng;
 use uuid::Uuid;
 
-use minutae::universe::{Universe, UniverseConf};
+use minutae::universe::{Universe, UniverseConf, EntityContainer};
 use minutae::cell::{Cell, CellState};
 use minutae::entity::{Entity, EntityState, MutEntityState};
 use minutae::action::{Action, CellAction, EntityAction, OwnedAction, SelfAction};
@@ -140,14 +140,9 @@ fn exec_cell_action(
     universe: &mut Universe<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, OurEntityAction>
 ) {
     match &action.action {
-        &Action::CellAction{action: _, x_offset, y_offset} => {
-            let (cur_universe_index, _) = (action.source_universe_index, action.source_entity_index);
-            let (cur_x, cur_y) = get_coords(cur_universe_index, UNIVERSE_SIZE);
-            let cell_x = cur_x as isize + x_offset;
-            let cell_y = cur_y as isize + y_offset;
-            if cell_x >= 0 && cell_x < UNIVERSE_SIZE as isize && cell_y >= 0 && cell_y < UNIVERSE_SIZE as isize &&
-                x_offset.abs() as usize <= VIEW_DISTANCE && x_offset.abs() as usize <= VIEW_DISTANCE
-            {
+        &Action::CellAction{action: _, universe_index} => {
+            let (cell_x, cell_y) = get_coords(universe_index, UNIVERSE_SIZE);
+            if cell_x < UNIVERSE_SIZE && cell_y < UNIVERSE_SIZE {
                 let cell_index = get_index(cell_x as usize, cell_y as usize, UNIVERSE_SIZE);
                 // consume the food by replacing it with water
                 universe.cells[cell_index].state = OurCellState::Water;
@@ -163,56 +158,42 @@ fn exec_self_action(
 ) {
     match &action.action {
         &Action::SelfAction(ref self_action) => {
+            let (entity_index, entity_uuid) = (action.source_entity_index, action.source_uuid);
             match self_action {
                 &SelfAction::Translate(x_offset, y_offset) => {
-                    let (cur_universe_index, cur_entity_index) = (action.source_universe_index, action.source_entity_index);
-                    let (cur_x, cur_y) = get_coords(cur_universe_index, UNIVERSE_SIZE);
-                    let new_x = cur_x as isize + x_offset;
-                    let new_y = cur_y as isize + y_offset;
+                    // this function will return `None` if the entity has been deleted
+                    match universe.entities.get_verify(entity_index, entity_uuid) {
+                        Some((entity, universe_index)) => {
+                            // if this is the entity that we're looking for, check to see if the requested move is in bounds
+                            let (cur_x, cur_y) = get_coords(universe_index, UNIVERSE_SIZE);
+                            let new_x = cur_x as isize + x_offset;
+                            let new_y = cur_y as isize + y_offset;
+                            let dst_universe_index = get_index(new_x as usize, new_y as usize, UNIVERSE_SIZE);
 
-                    // verify that the supplied desination coordinates are in bounds
-                    // TODO: verify that the supplied destination coordinates are within ruled bounds of destination
-                    if new_x >= 0 && new_x < UNIVERSE_SIZE as isize && new_y >= 0 && new_y < UNIVERSE_SIZE as isize {
-                        // check to make sure that the entity we're searching for is in its expected location
-                        let new_index = get_index(new_x as usize, new_y as usize, UNIVERSE_SIZE);
-                        // first attempt to locate the entity at the provided entity index and then search the whole coord
-                        // if we're unable to find it there.
-                        let real_entity_index = if universe.entities[cur_universe_index].len() <= cur_entity_index ||
-                            universe.entities[cur_universe_index][cur_entity_index].uuid != action.source_uuid
-                        {
-                            locate_entity_simple(action.source_uuid, &universe.entities[action.source_universe_index])
-                                .expect("Unable to locate the specified entity at the location it provided!")
-                        } else {
-                            cur_entity_index
-                        };
-
-                        let entity = universe.entities[cur_universe_index].remove(real_entity_index);
-                        universe.entity_meta.insert(entity.uuid, (new_x as usize, new_y as usize))
-                            .expect("No entry found in entity meta HashMap for pre-existing Entity!");
-                        universe.entities[new_index].push(entity);
+                            // verify that the supplied desination coordinates are in bounds
+                            // TODO: verify that the supplied destination coordinates are within ruled bounds of destination
+                            if new_x >= 0 && new_x < UNIVERSE_SIZE as isize && new_y >= 0 && new_y < UNIVERSE_SIZE as isize {
+                                universe.entities.move_entity(entity_index, dst_universe_index);
+                            }
+                        },
+                        None => (), // entity has been deleted, so do nothing.
                     }
                 },
                 &SelfAction::Custom(OurEntityAction::SetVector(x, y)) => {
                     // locate the entity that dispatched this request and mutate its state with the supplied value
                     // our implementation asserts that the entity will not have moved before this takes place, so
                     // a simple search is sufficient to locate it.
-                    let (universe_index, expected_entity_index) = (action.source_universe_index, action.source_entity_index);
-                    let entity_index = if 
-                        universe.entities[universe_index].len() <= expected_entity_index ||
-                        universe.entities[universe_index][expected_entity_index].uuid != action.source_uuid
-                    {
-                        // source entity index not what we expected it to be, so do a simple search
-                        locate_entity_simple(action.source_uuid, &universe.entities[universe_index])
-                            .expect("Source entity not at the coordinate we expected it to be!")
-                    } else {
-                        expected_entity_index
-                    };
-
-                    match universe.entities[universe_index][entity_index].state {
-                        OurEntityState::Predator{food: _, ref mut direction} => {
-                            *direction = Some((x, y));
+                    let (entity_index, entity_uuid) = (action.source_entity_index, action.source_uuid);
+                    match universe.entities.get_verify(entity_index, entity_uuid) {
+                        Some((entity, universe_index)) => {
+                            match entity.state {
+                                OurEntityState::Predator{food: _, ref mut direction} => {
+                                    *direction = Some((x, y));
+                                },
+                                _ => unreachable!(),
+                            }
                         },
-                        _ => unreachable!(),
+                        None => (), // entity has been deleted; do nothing.
                     }
                 },
                 _ => unimplemented!(),
@@ -227,56 +208,36 @@ fn exec_entity_action(
     universe: &mut Universe<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, OurEntityAction>
 ) {
     match &action.action {
-        &Action::EntityAction{action: ref entity_action, x_offset, y_offset, target_uuid} => {
+        &Action::EntityAction{action: ref entity_action, target_entity_index, target_uuid} => {
             match entity_action {
                 &OurEntityAction::EatFish => {
-                    // check to see if the fish is still where it's expected to be
-                    let (src_x, src_y) = get_coords(action.source_universe_index, UNIVERSE_SIZE);
-                    let (expected_x, expected_y) = ((src_x as isize + x_offset) as usize, (src_y as isize + y_offset) as usize);
-                    let expected_universe_index = get_index(expected_x as usize, expected_y as usize, UNIVERSE_SIZE);
+                    // check to see if the shark (source entity) is still alive
+                    let (source_entity_index, source_entity_uuid) = (action.source_entity_index, action.source_uuid);
+                    match universe.entities.get_verify(source_entity_index, source_entity_uuid) {
+                        Some((source_entity, source_universe_index)) => {
+                            // check to see if the fish is still alive and that we're in range to eat it
+                            match universe.entities.get_verify(target_entity_index, target_uuid) {
+                                Some((target_entity, target_universe_index)) => {
+                                    let (src_x, src_y) = get_coords(source_universe_index, UNIVERSE_SIZE);
+                                    let (entity_x, entity_y) = get_coords(target_universe_index, UNIVERSE_SIZE);
+                                    if manhattan_distance(src_x, src_y, entity_x, entity_y) > 1 {
+                                        return;
+                                    }
 
-                    let (entity_x, entity_y, mut universe_index, entity_index, moved) = match locate_entity(
-                        &universe.entities, target_uuid, expected_universe_index, &universe.entity_meta, UNIVERSE_SIZE
-                    ) {
-                        EntityLocation::Expected(entity_index) => {
-                            (expected_x, expected_y, expected_universe_index, entity_index, false)
+                                    // eat the fish, removing its entity + its entry in the meta `HashMap` and incrementing our food count.
+                                    let eaten_fish = universe.entities.remove(target_entity_index);
+                                    debug_assert_eq!(eaten_fish.uuid, target_uuid);
+
+                                    // increment the food value of the source entity
+                                    match source_entity.state {
+                                        OurEntityState::Predator{ref mut food, direction: _} => { *food += 1 },
+                                        _ => unreachable!(),
+                                    }
+                                },
+                                None => (),
+                            }
                         },
-                        EntityLocation::Moved(x, y, entity_index) => {
-                            let universe_index = get_index(x, y, UNIVERSE_SIZE);
-                            (x, y, universe_index, entity_index, true)
-                        },
-                        EntityLocation::Deleted => { return; },
-                    };
-
-                    // if the fish moved, we need to check if it's still in range and if not, abort
-                    if moved {
-                        if manhattan_distance(src_x, src_y, entity_x, entity_y) > 1 {
-                            return;
-                        }
-
-                        // recalculate universe index
-                        universe_index = get_index(entity_x, entity_y, UNIVERSE_SIZE);
-                    }
-
-                    // eat the fish, removing its entity + its entry in the meta `HashMap` and incrementing our food count.
-                    let eaten_fish = universe.entities[universe_index].remove(entity_index);
-                    debug_assert_eq!(eaten_fish.uuid, target_uuid);
-                    universe.entity_meta.remove(&target_uuid)
-                        .expect("Eaten fish did not have an entry in the meta `HashMap`!");
-
-                    let source_entity_index = if
-                        universe.entities[action.source_universe_index].len() > action.source_entity_index &&
-                        universe.entities[action.source_universe_index][action.source_entity_index].uuid == action.source_uuid
-                    {
-                        action.source_entity_index
-                    } else {
-                        // in this case, not possible for the source entity to have moved so a simple location is sufficient
-                        locate_entity_simple(action.source_uuid, &universe.entities[action.source_universe_index])
-                            .expect("Source entity moved from its expected location!")
-                    };
-                    match universe.entities[action.source_universe_index][source_entity_index].state {
-                        OurEntityState::Predator{ref mut food, direction: _} => *food += 1,
-                        _ => unreachable!(),
+                        None => (),
                     }
                 },
                 &OurEntityAction::MakeBaby => unimplemented!(),
@@ -331,7 +292,6 @@ impl Generator<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, O
     ) -> (
         Vec<Cell<OurCellState>>,
         Vec<Vec<Entity<OurCellState, OurEntityState, OurMutEntityState>>>,
-        HashMap<Uuid, (usize, usize)>
     ) {
         println!("Generating world...");
         // let mut rng = PcgRng::new_unseeded().with_stream(self.0);
@@ -343,7 +303,6 @@ impl Generator<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, O
         }
 
         let mut entities = vec![Vec::new(); length];
-        let mut entity_meta = HashMap::new();
         let mut rng = PcgRng::new_unseeded();
         rng.set_stream(10101010101);
 
@@ -352,7 +311,6 @@ impl Generator<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, O
         for _ in 0..FISH_COUNT {
             let index = rng.gen_range(0, UNIVERSE_SIZE * UNIVERSE_SIZE);
             let entity = origin_entity.clone();
-            entity_meta.insert(entity.uuid, get_coords(index, UNIVERSE_SIZE));
             entities[index].push(entity);
         }
 
@@ -364,11 +322,10 @@ impl Generator<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, O
         for _ in 0..PREDATOR_COUNT {
             let index = rng.gen_range(0, UNIVERSE_SIZE * UNIVERSE_SIZE);
             let entity = origin_predator.clone();
-            entity_meta.insert(entity.uuid, get_coords(index, UNIVERSE_SIZE));
             entities[index].push(entity);
         }
 
-        (cells, entities, entity_meta)
+        (cells, entities)
     }
 }
 
@@ -383,18 +340,17 @@ fn our_cell_mutator<'a>(_: usize, _: &[Cell<OurCellState>]) -> Option<OurCellSta
 /// This function determines the core logic of the simulation.  Every entity evaluates this function every tick of the
 /// simulation.  Actions are sent to the various executors and dispatched in batch after all entities have submitted them.
 fn our_entity_driver<'a>(
-    cur_x: usize,
-    cur_y: usize,
-    cur_state: &OurEntityState,
-    mut_state: &RustCell<OurMutEntityState>,
-    entities: &[Vec<Entity<OurCellState, OurEntityState, OurMutEntityState>>],
+    source_universe_index: usize,
+    entity: &Entity<OurCellState, OurEntityState, OurMutEntityState>,
+    entities: &EntityContainer<OurCellState, OurEntityState, OurMutEntityState>,
     cells: &[Cell<OurCellState>],
-    cell_action_executor: &mut FnMut(OurCellAction, isize, isize),
+    cell_action_executor: &mut FnMut(OurCellAction, usize),
     self_action_executor: &mut FnMut(SelfAction<OurCellState, OurEntityState, OurEntityAction>),
-    entity_action_executor: &mut FnMut(OurEntityAction, isize, isize, Uuid)
+    entity_action_executor: &mut FnMut(OurEntityAction, usize, Uuid)
 ) {
-    match cur_state {
-        &OurEntityState::Fish{food: _} => {
+    let (cur_x, cur_y) = get_coords(source_universe_index, UNIVERSE_SIZE);
+    match entity.state {
+        OurEntityState::Fish{food: _} => {
             // fish take only one action each tick.  Their priorities are these
             //  1. Escape predators that are within their vision
             //  2. Eat any food that is adjascent to them
@@ -405,9 +361,9 @@ fn our_entity_driver<'a>(
             let mut closest_predator: Option<(usize, usize, usize)> = None;
             // iterate through all visible cells and look for the predator + food item which is closest to us and run away from it
             for (x, y) in iter_visible(cur_x, cur_y, VIEW_DISTANCE, UNIVERSE_SIZE) {
-                let index = get_index(x, y, UNIVERSE_SIZE);
-                for entity in &entities[index] {
-                    match entity.state {
+                let universe_index = get_index(x, y, UNIVERSE_SIZE);
+                for entity_index in entities.get_entities_at(universe_index) {
+                    match entities.get(*entity_index).state {
                         OurEntityState::Predator{food: _, direction: _} => {
                             // if we found a nearby predator, calculate the distance between it and us
                             // if it's less than the current minimum distance, run from this one first
@@ -442,21 +398,21 @@ fn our_entity_driver<'a>(
             }
 
             // if there are no predators to flee from, look for the nearest food item
-            let mut closest_food: Option<(usize, usize, usize)> = None;
+            let mut closest_food: Option<(usize, usize)> = None;
             for (x, y) in iter_visible(cur_x, cur_y, VIEW_DISTANCE, UNIVERSE_SIZE) {
-                let index = get_index(x, y, UNIVERSE_SIZE);
-                match cells[index].state {
+                let cell_index = get_index(x, y, UNIVERSE_SIZE);
+                match cells[cell_index].state {
                     OurCellState::Food => {
                         // if we found a nearby food item, calculate the distance between it and us
                         // if it's less than the current minimum distance, run towards this one first
                         let cur_distance = manhattan_distance(cur_x, cur_y, x, y);
                         match closest_food {
-                            Some((_, _, min_distance)) => {
+                            Some((_, min_distance)) => {
                                 if min_distance > cur_distance {
-                                    closest_food = Some((x, y, cur_distance));
+                                    closest_food = Some((cell_index, cur_distance));
                                 }
                             },
-                            None => closest_food = Some((x, y, cur_distance)),
+                            None => closest_food = Some((cell_index, cur_distance)),
                         }
                     },
                     _ => (),
@@ -464,11 +420,9 @@ fn our_entity_driver<'a>(
             }
 
             match closest_food {
-                Some((food_x, food_y, food_distance)) => {
+                Some((cell_index, food_distance)) => {
                     // check if the food is within range of eating and, if it is, attempt to eat it.
                     // if not, attempt to move towards it
-                    let x_offset = food_x as isize - cur_x as isize;
-                    let y_offset = food_y as isize - cur_y as isize;
 
                     if food_distance <= 1 {
                         let cell_action = OurCellAction::Eat;
@@ -498,7 +452,7 @@ fn our_entity_driver<'a>(
                 return self_action_executor(self_action);
             }
         },
-        &OurEntityState::Predator{food: _, direction} => {
+        OurEntityState::Predator{food: _, direction} => {
             // 1. If we're adjascent to a fish, eat it.
             // 2. If we see a fish, move towards it.
             // 3. If we don't see any fish, pick a random vector (if we don't already have one picked) and move that way.
@@ -532,7 +486,8 @@ fn our_entity_driver<'a>(
                 Some((fish_x, fish_y, fish_uuid, fish_distance)) => {
                     let (x_offset, y_offset) = calc_offset(cur_x, cur_y, fish_x, fish_y);
                     if fish_distance <= 1 {
-                        return entity_action_executor(OurEntityAction::EatFish, x_offset, y_offset, fish_uuid);
+                        let fish_index = get_index(fish_x, fish_y, UNIVERSE_SIZE);
+                        return entity_action_executor(OurEntityAction::EatFish, fish_index, fish_uuid);
                     } else {
                         let self_action = SelfAction::Translate(x_offset, y_offset);
                         return self_action_executor(self_action);
@@ -544,7 +499,7 @@ fn our_entity_driver<'a>(
             // we can't see any fish, so pick a random direction to swim in (if we haven't already picked one) and swim that way
             let (x_dir, y_dir) = {
                 let mut get_random_vector = || {
-                    let mut mut_state_inner = mut_state.take();
+                    let mut mut_state_inner = entity.mut_state.take();
 
                     let mut vector: (i8, i8) = (0, 0);
 
@@ -557,7 +512,7 @@ fn our_entity_driver<'a>(
                         vector
                     };
 
-                    mut_state.set(mut_state_inner);
+                    entity.mut_state.set(mut_state_inner);
                     let self_action = SelfAction::Custom(OurEntityAction::SetVector(vector.0, vector.1));
                     self_action_executor(self_action);
 

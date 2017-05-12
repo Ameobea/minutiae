@@ -4,15 +4,16 @@
 
 use std::marker::PhantomData;
 
+use uuid::Uuid;
+
 use entity::EntityState;
 use cell::CellState;
 
 /// An action that is associated with a particular entity
 #[derive(Debug)]
 pub struct OwnedAction<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> {
-    pub source_universe_index: usize,
     pub source_entity_index: usize,
-    pub source_position_index: usize,
+    pub source_uuid: Uuid,
     pub action: Action<C, E, CA, EA>,
 }
 
@@ -25,8 +26,8 @@ pub enum Action<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAc
     },
     EntityAction {
         action: EA,
-        universe_index: usize,
-        target_entity_id: usize,
+        target_entity_index: usize,
+        target_uuid: Uuid,
     },
     SelfAction(SelfAction<C, E, EA>),
     __phantom_c(PhantomData<C>),

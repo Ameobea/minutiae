@@ -4,6 +4,7 @@
 
 extern crate test;
 extern crate rayon;
+extern crate uuid;
 
 pub mod universe;
 pub mod cell;
