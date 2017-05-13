@@ -7,6 +7,7 @@ extern crate rayon;
 extern crate uuid;
 
 pub mod universe;
+pub mod container;
 pub mod cell;
 pub mod entity;
 pub mod action;

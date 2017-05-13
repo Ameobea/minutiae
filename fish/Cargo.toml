@@ -4,8 +4,7 @@ version = "0.1.0"
 authors = ["Casey Primozic <me@ameo.link>"]
 
 [dependencies]
-# minutae = "0.2.0"
-minutae = { path = "../minutae" }
+minutae = "0.2.1"
 
 pcg = { git = "https://github.com/codahale/pcg.git" }
 rand = "0.3"
