@@ -28,17 +28,51 @@ use minutae::util::{calc_offset, get_coords, get_index, iter_visible, manhattan_
 use minutae::driver::{Driver, BasicDriver};
 use minutae::driver::middleware::{Middleware, UniverseDisplayer, Delay};
 
-const TICK_DELAY_MS: u64 = 16;
-const UNIVERSE_SIZE: usize = 38;
-const FISH_COUNT: usize = 150;
-const PREDATOR_COUNT: usize = 2;
-const VIEW_DISTANCE: usize = 4;
-const SCHOOL_SPACING: usize = 2;
+// :ok_hand:
+#[cfg(target_os = "emscripten")]
+const UNIVERSE_SIZE: usize = 800;
+#[cfg(target_os = "emscripten")]
+const FISH_COUNT: usize = 2000;
+#[cfg(target_os = "emscripten")]
+const PREDATOR_COUNT: usize = 0;
+#[cfg(target_os = "emscripten")]
+const VIEW_DISTANCE: usize = 3;
 // there's a one in `this` chance of spawning a food cluster each tick
+#[cfg(target_os = "emscripten")]
+const FOOD_SPAWN_RARITY: usize = 2;
+// this number of food cells are spawned (minus overlaps)
+#[cfg(target_os = "emscripten")]
+const FOOD_SPAWN_COUNT: usize = 300;
+#[cfg(target_os = "emscripten")]
+const FOOD_SPAWN_RADIUS: isize = 40;
+
+#[cfg(not(target_os = "emscripten"))]
+const TICK_DELAY_MS: u64 = 16;
+#[cfg(not(target_os = "emscripten"))]
+const UNIVERSE_SIZE: usize = 800;
+#[cfg(not(target_os = "emscripten"))]
+const FISH_COUNT: usize = 2500;
+#[cfg(not(target_os = "emscripten"))]
+const PREDATOR_COUNT: usize = 0;
+#[cfg(not(target_os = "emscripten"))]
+const VIEW_DISTANCE: usize = 4;
+// there's a one in `this` chance of spawning a food cluster each tick
+#[cfg(not(target_os = "emscripten"))]
 const FOOD_SPAWN_RARITY: usize = 4;
 // this number of food cells are spawned (minus overlaps)
+#[cfg(not(target_os = "emscripten"))]
 const FOOD_SPAWN_COUNT: usize = 9;
+#[cfg(not(target_os = "emscripten"))]
 const FOOD_SPAWN_RADIUS: isize = 7;
+
+
+const SCHOOL_SPACING: usize = 2;
+
+#[cfg(target_os = "emscripten")]
+mod emscripten;
+
+#[cfg(target_os = "emscripten")]
+use emscripten::{EmscriptenDriver, CanvasRenderer};
 
 #[derive(Clone, Debug)]
 enum OurCellState {
@@ -57,7 +91,7 @@ impl Display for OurCellState {
 
         write!(formatter, "{}", val)
     }
-}
+} 
 
 #[derive(Clone, Debug)]
 enum OurEntityState {
@@ -326,13 +360,7 @@ impl Generator<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, O
     }
 }
 
-fn our_cell_mutator<'a>(_: usize, _: &[Cell<OurCellState>]) -> Option<OurCellState> {
-    // Some(match cells[index].state {
-    //     OurCellState::Empty => OurCellState::Filled,
-    //     OurCellState::Filled => OurCellState::Empty,
-    // })
-    None
-}
+fn our_cell_mutator<'a>(_: usize, _: &[Cell<OurCellState>]) -> Option<OurCellState> { None }
 
 /// This function determines the core logic of the simulation.  Every entity evaluates this function every tick of the
 /// simulation.  Actions are sent to the various executors and dispatched in batch after all entities have submitted them.
@@ -435,10 +463,10 @@ fn our_entity_driver<'a>(
                 None => (),
             }
 
-            // TODO: Implement more intelligent schooling behavior
-            // if we're on the same index as another fish and aren't chasing food or running from a predator, pick a random
-            // direction to move and return.
-            if entities.get_entities_at(source_universe_index).len() > 1 {
+            // // TODO: Implement more intelligent schooling behavior
+            // // if we're on the same index as another fish and aren't chasing food or running from a predator, pick a random
+            // // direction to move and return.
+            // if entities.get_entities_at(source_universe_index).len() > 1 {
                 let mut mut_state_inner = entity.mut_state.take();
                 let (x_offset, y_offset) = {
                     let mut rng = mut_state_inner.rng.as_mut().unwrap();
@@ -448,7 +476,7 @@ fn our_entity_driver<'a>(
 
                 let self_action = SelfAction::Translate(x_offset, y_offset);
                 return self_action_executor(self_action);
-            }
+            // }
         },
         OurEntityState::Predator{food: _, direction} => {
             // 1. If we're adjascent to a fish, eat it.
@@ -593,12 +621,23 @@ fn main() {
         our_entity_driver,
     );
 
-    let driver = BasicDriver::new();
-    driver.init(universe, engine, &mut [
-        Box::new(UniverseDisplayer {}),
-        Box::new(Delay(TICK_DELAY_MS)),
-        Box::new(FoodSpawnerMiddleware::new()),
-    ]);
+    #[cfg(target_os = "emscripten")]
+    {
+        EmscriptenDriver.init(universe, engine, &mut [
+            Box::new(FoodSpawnerMiddleware::new()),
+            Box::new(CanvasRenderer::new()),
+        ]);
+    }
+
+    #[cfg(not(target_os = "emscripten"))]
+    {
+        let driver = BasicDriver::new();
+        driver.init(universe, engine, &mut [
+            // Box::new(UniverseDisplayer {}),
+            // Box::new(Delay(TICK_DELAY_MS)),
+            Box::new(FoodSpawnerMiddleware::new()),
+        ]);
+    }
 }
 
 #[bench]
