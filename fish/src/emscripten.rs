@@ -2,7 +2,8 @@
 // Which took it from https://github.com/Gigoteur/PX8/blob/master/src/px8/emscripten.rs
 
 use std::cell::RefCell;
-use std::ptr::null_mut;
+use std::mem;
+use std::ptr::{self, null_mut};
 use std::os::raw::{c_int, c_void, c_float};
 
 use minutae::driver::Driver;
@@ -81,20 +82,15 @@ impl Middleware<
         for universe_index in 0..universe.cells.len() {
             let entities = universe.entities.get_entities_at(universe_index);
 
-            let (r, g, b) = if entities.len() > 0 {
-                // match universe.entities[0]
-                (255, 233, 222)
+            let dst_ptr = unsafe { self.0.as_ptr().offset(universe_index as isize * 4) } as *mut u32;
+            if entities.len() > 0 {
+                unsafe { ptr::write(dst_ptr, mem::transmute::<[u8; 4], _>([255, 233, 222, 255])) };
             } else {
                 match unsafe { universe.cells.get_unchecked(universe_index) }.state {
-                    OurCellState::Water => (0, 0, 0),
-                    OurCellState::Food => (13, 246, 24),
+                    OurCellState::Water => unsafe { ptr::write(dst_ptr, mem::transmute::<[u8; 4], _>([0, 0, 0, 255])) },
+                    OurCellState::Food => unsafe { ptr::write(dst_ptr, mem::transmute::<[u8; 4], _>([13, 246, 24, 255])) },
                 }
             };
-
-            let offset = universe_index * 4;
-            self.0[offset] = r;
-            self.0[offset + 1] = g;
-            self.0[offset + 2] = b;
         }
 
         // pass a pointer to our internal buffer to the canvas render function

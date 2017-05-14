@@ -1,6 +1,6 @@
 //! A place to experiment with the ideas and concepts of the Minuate simulation
 
-#![feature(alloc_system, conservative_impl_trait, test)]
+#![feature(alloc_system, conservative_impl_trait, slice_patterns, test)]
 
 extern crate alloc_system;
 extern crate rand;
@@ -68,7 +68,7 @@ const FOOD_SPAWN_RADIUS: isize = 7;
 
 const SCHOOL_SPACING: usize = 2;
 
-#[cfg(target_os = "emscripten")]
+// #[cfg(target_os = "emscripten")]
 mod emscripten;
 
 #[cfg(target_os = "emscripten")]
