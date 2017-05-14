@@ -21,7 +21,7 @@ use minutae::cell::{Cell, CellState};
 use minutae::entity::{Entity, EntityState, MutEntityState};
 use minutae::action::{Action, CellAction, EntityAction, OwnedAction, SelfAction};
 use minutae::engine::Engine;
-use minutae::engine::serial::SerialEngine;
+use minutae::engine::parallel::ParallelEngine;
 use minutae::engine::iterator::{SerialGridIterator, SerialEntityIterator};
 use minutae::generator::Generator;
 use minutae::util::{calc_offset, get_coords, get_index, iter_visible, manhattan_distance};
@@ -32,7 +32,7 @@ use minutae::driver::middleware::{Middleware, UniverseDisplayer, Delay};
 #[cfg(target_os = "emscripten")]
 const UNIVERSE_SIZE: usize = 800;
 #[cfg(target_os = "emscripten")]
-const FISH_COUNT: usize = 2000;
+const FISH_COUNT: usize = 200000;
 #[cfg(target_os = "emscripten")]
 const PREDATOR_COUNT: usize = 0;
 #[cfg(target_os = "emscripten")]
@@ -91,7 +91,7 @@ impl Display for OurCellState {
 
         write!(formatter, "{}", val)
     }
-} 
+}
 
 #[derive(Clone, Debug)]
 enum OurEntityState {
@@ -159,7 +159,7 @@ enum OurEntityAction {
 impl EntityAction<OurCellState, OurEntityState> for OurEntityAction {}
 
 type OurEngineType = Box<
-        SerialEngine<OurCellState, OurEntityState, OurMutEntityState, OurCellAction,
+        ParallelEngine<OurCellState, OurEntityState, OurMutEntityState, OurCellAction,
         OurEntityAction, SerialGridIterator, SerialEntityIterator<OurCellState, OurEntityState>>
     >;
 
@@ -279,7 +279,7 @@ fn exec_entity_action(
     }
 }
 
-impl SerialEngine<
+impl ParallelEngine<
     OurCellState, OurEntityState, OurMutEntityState, OurCellAction, OurEntityAction,
     SerialGridIterator, SerialEntityIterator<OurCellState, OurEntityState>
 > for OurEngine {
@@ -647,7 +647,7 @@ fn universe_step(b: &mut test::Bencher) {
     let mut conf = universe::UniverseConf::default();
     conf.size = UNIVERSE_SIZE;
     let mut engine: Box<
-        SerialEngine<OurCellState, OurEntityState, OurMutEntityState, OurCellAction,
+        ParallelEngine<OurCellState, OurEntityState, OurMutEntityState, OurCellAction,
         OurEntityAction,SerialGridIterator, SerialEntityIterator<OurCellState, OurEntityState>>
     > = Box::new(OurEngine {});
 
@@ -664,4 +664,9 @@ fn universe_step(b: &mut test::Bencher) {
         middleware.before_render(&mut universe);
         engine.step(&mut universe)
     })
+}
+
+#[bench]
+fn thread_spawn(b: &mut test::Bencher) {
+    b.iter(|| std::thread::spawn(|| {}))
 }

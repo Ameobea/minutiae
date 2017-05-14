@@ -55,3 +55,5 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> Entity<C, E, M> {
         }
     }
 }
+
+unsafe impl<C: CellState, E: EntityState<C>, M: MutEntityState> Send for Entity<C, E, M> where C:Send, E:Send {}

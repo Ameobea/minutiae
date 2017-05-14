@@ -30,8 +30,6 @@ pub enum Action<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAc
         target_uuid: Uuid,
     },
     SelfAction(SelfAction<C, E, EA>),
-    __phantom_c(PhantomData<C>),
-    __phantom_e(PhantomData<E>),
 }
 
 /// An attempt of an entity to mutate a cell.

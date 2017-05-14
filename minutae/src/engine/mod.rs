@@ -8,6 +8,7 @@ use entity::{EntityState, MutEntityState};
 use action::{CellAction, EntityAction};
 
 pub mod serial;
+pub mod parallel;
 pub mod iterator;
 
 pub trait Engine<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>> {

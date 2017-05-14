@@ -12,7 +12,7 @@ use entity::{Entity, EntityState, MutEntityState};
 /// For each coordinate on the grid, keeps track of the entities that inhabit it by holding a list of
 /// indexes to slots in the `EntityContainer`.
 #[derive(Debug)]
-pub struct EntityPositions(Vec<Vec<usize>>);
+pub struct EntityPositions(pub Vec<Vec<usize>>);
 
 impl EntityPositions {
     pub fn new(universe_size: usize) -> Self {
@@ -48,10 +48,12 @@ pub enum EntitySlot<C: CellState, E: EntityState<C>, M: MutEntityState> {
     Empty(usize),
 }
 
+unsafe impl<C: CellState, E: EntityState<C>, M: MutEntityState> Send for EntitySlot<C, E, M> where E:Send, M:Send {}
+
 pub struct EntityContainer<C: CellState, E: EntityState<C>, M: MutEntityState> {
-    entities: Vec<EntitySlot<C, E, M>>,
-    empty_index: usize,
-    positions: EntityPositions
+    pub entities: Vec<EntitySlot<C, E, M>>,
+    pub empty_index: usize,
+    pub positions: EntityPositions
 }
 
 impl<C: CellState, E: EntityState<C>, M: MutEntityState> EntityContainer<C, E, M> {
@@ -214,5 +216,9 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> EntityContainer<C, E, M
     pub fn get_entities_at(&self, universe_index: usize) -> &[usize] {
         debug_assert!(universe_index < self.positions.len());
         &self.positions[universe_index]
+    }
+
+    pub fn len(&self) -> usize {
+        self.entities.len()
     }
 }

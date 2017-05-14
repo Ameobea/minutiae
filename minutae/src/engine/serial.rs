@@ -1,9 +1,7 @@
 //! A simulation engine that simulates all changes to the universe sequentially.  This is the most simple
 //! engine but doens't take advantage of any possible benifits from things like multithreading.
 
-// use rayon::prelude::*;
-
-use universe::{Universe, UniverseConf};
+use universe::Universe;
 use cell::{Cell, CellState};
 use entity::{Entity, EntityState, MutEntityState};
 use action::{Action, OwnedAction, CellAction, SelfAction, EntityAction};
@@ -30,10 +28,8 @@ impl<
 > Engine<C, E, M, CA, EA> for Box<SerialEngine<C, E, M, CA, EA, CI, EI>> {
     // #[inline(never)]
     fn step<'a>(&'a mut self, mut universe: &'a mut Universe<C, E, M, CA, EA>) {
-        let UniverseConf{view_distance: _, size: _, iter_cells} = universe.conf;
-
         // iterate over the universe's cells one at a time, applying their state transitions immediately
-        if iter_cells {
+        if universe.conf.iter_cells {
             let cell_iterator: &mut GridIterator = &mut self.iter_cells(&universe.cells);
             for index in cell_iterator {
                 match (universe.cell_mutator)(index, &universe.cells) {

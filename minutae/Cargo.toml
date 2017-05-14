@@ -9,7 +9,9 @@ keywords = ["simulation", "automata", "engine", "entity"]
 license = "MIT"
 
 [dependencies]
-rayon = "0.7.0"
+futures = "0.1.13"
+num_cpus = "1.4.0"
+smallvec = "0.3.3"
 uuid = { version = "0.5.0", features = ["v4"] }
 
 [profile.release]
