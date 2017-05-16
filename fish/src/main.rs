@@ -21,7 +21,10 @@ use minutae::cell::{Cell, CellState};
 use minutae::entity::{Entity, EntityState, MutEntityState};
 use minutae::action::{Action, CellAction, EntityAction, OwnedAction, SelfAction};
 use minutae::engine::Engine;
+#[cfg(not(target_os = "emscripten"))]
 use minutae::engine::parallel::ParallelEngine;
+#[cfg(target_os = "emscripten")]
+use minutae::engine::serial::SerialEngine;
 use minutae::engine::iterator::{SerialGridIterator, SerialEntityIterator};
 use minutae::generator::Generator;
 use minutae::util::{calc_offset, get_coords, get_index, iter_visible, manhattan_distance};
@@ -32,7 +35,7 @@ use minutae::driver::middleware::{Middleware, UniverseDisplayer, Delay};
 #[cfg(target_os = "emscripten")]
 const UNIVERSE_SIZE: usize = 800;
 #[cfg(target_os = "emscripten")]
-const FISH_COUNT: usize = 200000;
+const FISH_COUNT: usize = 2500;
 #[cfg(target_os = "emscripten")]
 const PREDATOR_COUNT: usize = 0;
 #[cfg(target_os = "emscripten")]
@@ -49,9 +52,9 @@ const FOOD_SPAWN_RADIUS: isize = 40;
 #[cfg(not(target_os = "emscripten"))]
 const TICK_DELAY_MS: u64 = 16;
 #[cfg(not(target_os = "emscripten"))]
-const UNIVERSE_SIZE: usize = 800;
+const UNIVERSE_SIZE: usize = 40;
 #[cfg(not(target_os = "emscripten"))]
-const FISH_COUNT: usize = 2500;
+const FISH_COUNT: usize = 200000;
 #[cfg(not(target_os = "emscripten"))]
 const PREDATOR_COUNT: usize = 0;
 #[cfg(not(target_os = "emscripten"))]
@@ -158,10 +161,17 @@ enum OurEntityAction {
 
 impl EntityAction<OurCellState, OurEntityState> for OurEntityAction {}
 
+#[cfg(not(target_os = "emscripten"))]
 type OurEngineType = Box<
         ParallelEngine<OurCellState, OurEntityState, OurMutEntityState, OurCellAction,
-        OurEntityAction, SerialGridIterator, SerialEntityIterator<OurCellState, OurEntityState>>
+        OurEntityAction, SerialGridIterator>
     >;
+
+#[cfg(target_os = "emscripten")]
+type OurEngine = Box<
+    SerialEngine<OurCellState, OurEntityState, OurMutEntityState, OurCellAction,
+    OurEntityAction, SerialGridIterator, SerialEntityIterator<OurCellState, OurEntityState>>
+>;
 
 struct OurEngine {}
 
@@ -279,7 +289,28 @@ fn exec_entity_action(
     }
 }
 
-impl ParallelEngine<
+fn exec_actions(
+    universe: &mut Universe<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, OurEntityAction>,
+    cell_actions: &[OwnedAction<OurCellState, OurEntityState, OurCellAction, OurEntityAction>],
+    self_actions: &[OwnedAction<OurCellState, OurEntityState, OurCellAction, OurEntityAction>],
+    entity_actions: &[OwnedAction<OurCellState, OurEntityState, OurCellAction, OurEntityAction>],
+) {
+    // process actions in order of cell actions, then self actions, and finally entity actions
+    for cell_action in cell_actions {
+        exec_cell_action(cell_action, universe);
+    }
+
+    for self_action in self_actions {
+        exec_self_action(self_action, universe);
+    }
+
+    for entity_action in entity_actions {
+        exec_entity_action(entity_action, universe);
+    }
+}
+
+#[cfg(target_os = "emscripten")]
+impl SerialEngine<
     OurCellState, OurEntityState, OurMutEntityState, OurCellAction, OurEntityAction,
     SerialGridIterator, SerialEntityIterator<OurCellState, OurEntityState>
 > for OurEngine {
@@ -300,18 +331,7 @@ impl ParallelEngine<
         self_actions: &[OwnedAction<OurCellState, OurEntityState, OurCellAction, OurEntityAction>],
         entity_actions: &[OwnedAction<OurCellState, OurEntityState, OurCellAction, OurEntityAction>],
     ) {
-        // process actions in order of cell actions, then self actions, and finally entity actions
-        for cell_action in cell_actions {
-            exec_cell_action(cell_action, universe);
-        }
-
-        for self_action in self_actions {
-            exec_self_action(self_action, universe);
-        }
-
-        for entity_action in entity_actions {
-            exec_entity_action(entity_action, universe);
-        }
+        exec_actions(universe, cell_actions, self_actions, entity_actions);
     }
 }
 
@@ -612,7 +632,10 @@ fn main() {
 
     let mut conf = universe::UniverseConf::default();
     conf.size = UNIVERSE_SIZE;
+    #[cfg(target_os = "emscripten")]
     let engine: OurEngineType = Box::new(OurEngine {});
+    #[cfg(not(target_os = "emscripten"))]
+    let engine = Box::new(ParallelEngine::new(SerialGridIterator::new(UNIVERSE_SIZE * UNIVERSE_SIZE), exec_actions, our_entity_driver));
 
     let universe = universe::Universe::new(
         conf,
@@ -633,23 +656,20 @@ fn main() {
     {
         let driver = BasicDriver::new();
         driver.init(universe, engine, &mut [
-            // Box::new(UniverseDisplayer {}),
-            // Box::new(Delay(TICK_DELAY_MS)),
+            Box::new(UniverseDisplayer {}),
+            Box::new(Delay(TICK_DELAY_MS)),
             Box::new(FoodSpawnerMiddleware::new()),
         ]);
     }
 }
 
 #[bench]
-fn universe_step(b: &mut test::Bencher) {
+fn universe_step_parallel(b: &mut test::Bencher) {
     use minutae::universe;
 
     let mut conf = universe::UniverseConf::default();
     conf.size = UNIVERSE_SIZE;
-    let mut engine: Box<
-        ParallelEngine<OurCellState, OurEntityState, OurMutEntityState, OurCellAction,
-        OurEntityAction,SerialGridIterator, SerialEntityIterator<OurCellState, OurEntityState>>
-    > = Box::new(OurEngine {});
+    let mut engine = Box::new(ParallelEngine::new(SerialGridIterator::new(UNIVERSE_SIZE * UNIVERSE_SIZE), exec_actions, our_entity_driver));
 
     let mut universe = Universe::new(
         conf,
