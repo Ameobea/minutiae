@@ -1,6 +1,6 @@
 [package]
 name = "minutae"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["Casey Primozic <me@ameo.link>"]
 description = "Cellular Automata-esque simulation engine involving a 2D universe populated by cells and entities"
 repository = "https://github.com/Ameobea/minutae"
@@ -9,9 +9,7 @@ keywords = ["simulation", "automata", "engine", "entity"]
 license = "MIT"
 
 [dependencies]
-futures = "0.1.13"
 num_cpus = "1.4.0"
-smallvec = "0.3.3"
 uuid = { version = "0.5.0", features = ["v4"] }
 
 [profile.release]

@@ -6,3 +6,4 @@ dbg.ll
 expanded.rs
 ir.sh
 testing/
+*.wasm

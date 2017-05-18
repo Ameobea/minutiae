@@ -196,7 +196,7 @@ impl<
 
         // create vector to hold the results from the worker threads without allocating.  Will always have the same length as the
         // number of worker threads (currently the number of CPUs)
-        let mut action_buf_buf = Vec::with_capacity(cpu_count);
+        let action_buf_buf = Vec::with_capacity(cpu_count);
 
         ParallelEngine {
             worker_count: cpu_count,

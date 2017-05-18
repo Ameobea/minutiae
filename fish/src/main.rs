@@ -71,7 +71,6 @@ const FOOD_SPAWN_RADIUS: isize = 7;
 
 const SCHOOL_SPACING: usize = 2;
 
-// #[cfg(target_os = "emscripten")]
 mod emscripten;
 
 #[cfg(target_os = "emscripten")]
@@ -168,7 +167,7 @@ type OurEngineType = Box<
     >;
 
 #[cfg(target_os = "emscripten")]
-type OurEngine = Box<
+type OurEngineType = Box<
     SerialEngine<OurCellState, OurEntityState, OurMutEntityState, OurCellAction,
     OurEntityAction, SerialGridIterator, SerialEntityIterator<OurCellState, OurEntityState>>
 >;

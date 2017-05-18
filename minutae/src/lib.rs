@@ -1,11 +1,9 @@
 //! Minutae Simulation Engine
 
-#![feature(associated_consts, conservative_impl_trait, slice_patterns, test)]
+#![feature(conservative_impl_trait, test)]
 
 extern crate test;
-extern crate futures;
 extern crate num_cpus;
-extern crate smallvec;
 extern crate uuid;
 
 pub mod universe;
