@@ -1,0 +1,10 @@
+[package]
+name = "minutae-libremote"
+version = "0.1.0"
+authors = ["Casey Primozic <me@ameo.link>"]
+
+[dependencies]
+bincode = "0.8.0"
+flate2 = { version = "0.2", features = ["zlib"], default-features = false }
+serde = "1.*.*"
+serde_derive = "1.*.*"

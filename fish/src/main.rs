@@ -68,7 +68,6 @@ const FOOD_SPAWN_COUNT: usize = 9;
 #[cfg(not(target_os = "emscripten"))]
 const FOOD_SPAWN_RADIUS: isize = 7;
 
-
 const SCHOOL_SPACING: usize = 2;
 
 mod emscripten;
