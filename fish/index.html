@@ -3,7 +3,7 @@
   <head>
     <meta charset='utf-8'>
     <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
-    <title>Fish</title>
+    <title>Fish Asm.JS</title>
     <style>
     body {
       background-color: black;
@@ -19,17 +19,7 @@
       var Module = {
         preRun: [],
         postRun: [],
-        print: (function() {
-          var element = document.getElementById('output');
-          if (element) element.value = ''; // clear browser cache
-          return function(text) {
-            output.push(text);
-            if(output.length == 40) {
-              document.getElementById('output').value = output.join('\n');
-              output = [];
-            }
-          };
-        })(),
+        print: console.log,
         printErr: function(text) {
           if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
           console.error(text);

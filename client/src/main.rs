@@ -45,8 +45,15 @@ pub extern "C" fn create_client(universe_size: c_int) -> *mut c_void {
     Box::into_raw(boxed_client) as *mut c_void
 }
 
+/// Given a client, returns a pointer to its inner pixel data buffer.
+#[no_mangle]
+pub unsafe extern "C" fn get_buffer_ptr(client: *const Client) -> *const u8 {
+    (*(*client).universe).as_ptr() as *const u8
+}
+
+#[no_mangle]
 pub extern "C" fn process_message(client: *mut Client, message_ptr: *const u8, message_len: c_int) {
-    let client: &mut Client = unsafe { &mut *client };
+    let mut client: &mut Client = unsafe { &mut *client };
     // construct a slice from the raw data
     let slice: &[u8] = unsafe { from_raw_parts(message_ptr, message_len as usize) };
     // decompress and deserialize the message buffer into a `ServerMessage`
@@ -58,7 +65,14 @@ pub extern "C" fn process_message(client: *mut Client, message_ptr: *const u8, m
         },
     };
 
-    if message.seq == client.last_seq + 1 {
+    handle_message(&mut client, message);
+
+    // We don't need to free the message buffer on the Rust side; that will be handled in the JS
+    // The same goes for drawing the updated universe to the canas.
+}
+
+fn handle_message(client: &mut Client, message: ServerMessage) {
+    if message.seq == client.last_seq + 1 || client.last_seq == 0 {
         match message.contents {
             ServerMessageContents::Diff(diffs) => {
                 // apply all diffs contained in the message
@@ -68,11 +82,44 @@ pub extern "C" fn process_message(client: *mut Client, message_ptr: *const u8, m
             },
             _ => unimplemented!(),
         }
-    } else {
-        // TODO: handle sequences being received out of order
-    }
 
-    // don't need to free the message buffer on the Rust side; that will be handled in the JS
+        client.last_seq += 1;
+
+        // if we have buffered messages to handle, apply them now.
+        let diffs_list: Vec<Vec<Diff>> = client.message_buffer.drain(..).map(|message| -> Vec<Diff> {
+            match message.contents {
+                ServerMessageContents::Diff(diffs) => diffs,
+                _ => Vec::new(),
+            }
+        }).collect();
+
+        for diffs in diffs_list {
+            for diff in diffs {
+                client.apply_diff(diff);
+            }
+        }
+    } else if message.seq > client.last_seq + 1 {
+        // store the message in the client's message buffer and wait until we receive the missing ones
+        client.message_buffer.push(message);
+        client.message_buffer.sort();
+
+        // if it's been a while since we lost the message, ask to retransmit it and any others we're missing
+        let mut last_seen_seq = client.last_seq;
+        for message in &client.message_buffer {
+            // send retransmission requests for the missing messages
+            for missing_seq in (last_seen_seq + 1)..message.seq {
+                let client_msg_bin: Vec<u8> = ClientMessage::Retransmit(missing_seq)
+                    .serialize()
+                    .expect("Unable to serialize `ClientMessage` while requesting message retransmission!");
+                unsafe { send_client_message((&client_msg_bin).as_ptr(), client_msg_bin.len() as c_int) }
+                // heap-allocated serialized message will be freed here.
+            }
+
+            last_seen_seq = message.seq;
+        }
+    } else if message.seq == client.last_seq {
+        // TODO
+    }
 }
 
 pub fn main() {

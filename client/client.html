@@ -3,7 +3,7 @@
   <head>
     <meta charset='utf-8'>
     <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
-    <title>Fish WASM</title>
+    <title>Minutae Thin Client</title>
     <style>
     body {
       background-color: black;
@@ -14,6 +14,9 @@
     <canvas id='canvas' width='800' height='800'>
 
     <script type='text/javascript'>
+      // will be set by a function defined in `library_minutaeclient` and called by Rust code
+      var socket = null;
+
       var Module = {
         preRun: [],
         postRun: [],
@@ -36,6 +39,6 @@
         })(),
       };
     </script>
-    <script type='text/javascript' src='target/wasm32-unknown-emscripten/release/minutae-fish.js'></script>
+    <script type='text/javascript' src='target/asmjs-unknown-emscripten/release/minutae-fish.js'></script>
   </body>
 </html>

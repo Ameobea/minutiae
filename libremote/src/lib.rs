@@ -10,6 +10,7 @@ extern crate serde;
 extern crate serde_derive;
 
 use std::io::Write;
+use std::cmp::{PartialOrd, Ord, Ordering};
 
 use bincode::{serialize, deserialize, serialize_into, serialized_size, Infinite};
 use flate2::Compression;
@@ -19,7 +20,7 @@ use flate2::write::{DeflateEncoder, DeflateDecoder};
 /// number that is used to ensure that they're applied in order.  There will never be a case in which sequence numbers are
 /// skipped; if a client misses a message or receives an out-of-order message, it should be stored until the missing one is
 /// received or a message should be sent requesting a re-broadcast.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerMessage {
     pub seq: u32,
     pub contents: ServerMessageContents,
@@ -52,18 +53,30 @@ impl ServerMessage {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+impl PartialOrd for ServerMessage {
+    fn partial_cmp(&self, rhs: &Self) -> Option<Ordering> {
+        Some(self.seq.cmp(&rhs.seq))
+    }
+}
+
+impl Ord for ServerMessage {
+    fn cmp(&self, rhs: &Self) -> Ordering {
+        self.seq.cmp(&rhs.seq)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ServerMessageContents {
     Diff(Vec<Diff>),
     Snapshot(Vec<Color>),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Color(pub [u8; 3]);
 
 /// Encodes the difference between two different steps of a simulation.  Currently simply contains a universe index and
 /// and the object that is visible there.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Diff {
     pub universe_index: usize,
     pub color: Color,
