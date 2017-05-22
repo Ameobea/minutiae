@@ -7,7 +7,9 @@ extern crate rand;
 extern crate pcg;
 extern crate test;
 extern crate uuid;
+
 extern crate minutae;
+extern crate minutae_libremote;
 
 use std::fmt::{self, Display, Formatter};
 
@@ -71,6 +73,7 @@ const FOOD_SPAWN_RADIUS: isize = 7;
 const SCHOOL_SPACING: usize = 2;
 
 mod emscripten;
+mod server;
 
 #[cfg(target_os = "emscripten")]
 use emscripten::{EmscriptenDriver, CanvasRenderer};

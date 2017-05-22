@@ -6,10 +6,12 @@ authors = ["Casey Primozic <me@ameo.link>"]
 [dependencies]
 # minutae = "0.2.2"
 minutae = { path = "../minutae" }
+minutae-libremote = { path = "../libremote" }
 
 pcg = { git = "https://github.com/codahale/pcg.git" }
 rand = "0.3"
 uuid = { version = "0.5.0", features = ["v4"] }
+ws = "0.7.1"
 
 [profile.release]
 # debug = true
