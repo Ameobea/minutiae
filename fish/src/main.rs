@@ -7,6 +7,7 @@ extern crate rand;
 extern crate pcg;
 extern crate test;
 extern crate uuid;
+extern crate ws;
 
 extern crate minutae;
 extern crate minutae_libremote;
