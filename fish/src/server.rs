@@ -13,7 +13,7 @@ use minutae::engine::Engine;
 use minutae::driver::middleware::Middleware;
 use minutae_libremote::{Color, Diff, ServerMessage, ServerMessageContents};
 
-struct ColorServer<C: CellState, E: EntityState<C>, M: MutEntityState> {
+pub struct ColorServer<C: CellState, E: EntityState<C>, M: MutEntityState> {
     universe_len: usize,
     last_colors: Vec<Color>,
     diffs: Vec<Diff>,
@@ -59,7 +59,7 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> ColorServer<C, E, M> {
         universe_size: usize, color_calculator: fn(
             &Cell<C>, entity_indexes: &[usize],
             entity_container: &EntityContainer<C, E, M>
-        ) -> Color, diff_handler: fn(&[Diff]), ws_host: &'static str,
+        ) -> Color, ws_host: &'static str,
     ) -> Self {
         ColorServer {
             universe_len: universe_size * universe_size,

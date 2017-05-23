@@ -32,7 +32,7 @@ impl ServerMessage {
         // println!("Size of raw binary: {}", serialized_size(self));
         let mut compressed = Vec::with_capacity(serialized_size(self) as usize);
         {
-            let mut encoder = DeflateEncoder::new(&mut compressed, Compression::Best);
+            let mut encoder = DeflateEncoder::new(&mut compressed, Compression::Fast);
             serialize_into(&mut encoder, self, Infinite).map_err(|_| String::from("Error while serializing `ServerMessage`."))?;
             encoder.finish().map_err(|err| format!("Unable to finish the encoder: {:?}", err))?;
         }

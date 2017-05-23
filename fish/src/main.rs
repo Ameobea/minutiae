@@ -33,6 +33,7 @@ use minutae::generator::Generator;
 use minutae::util::{calc_offset, get_coords, get_index, iter_visible, manhattan_distance};
 use minutae::driver::{Driver, BasicDriver};
 use minutae::driver::middleware::{Middleware, UniverseDisplayer, Delay};
+use minutae_libremote::Color;
 
 // :ok_hand:
 #[cfg(target_os = "emscripten")]
@@ -55,9 +56,9 @@ const FOOD_SPAWN_RADIUS: isize = 40;
 #[cfg(not(target_os = "emscripten"))]
 const TICK_DELAY_MS: u64 = 16;
 #[cfg(not(target_os = "emscripten"))]
-const UNIVERSE_SIZE: usize = 40;
+const UNIVERSE_SIZE: usize = 800;
 #[cfg(not(target_os = "emscripten"))]
-const FISH_COUNT: usize = 200000;
+const FISH_COUNT: usize = 3508;
 #[cfg(not(target_os = "emscripten"))]
 const PREDATOR_COUNT: usize = 0;
 #[cfg(not(target_os = "emscripten"))]
@@ -654,13 +655,38 @@ fn main() {
         ]);
     }
 
+    fn color_calculator(
+        cell: &Cell<OurCellState>, entity_indexes: &[usize],
+        entities: &EntityContainer<OurCellState, OurEntityState, OurMutEntityState>
+    ) -> Color {
+        if entity_indexes.len() == 0 {
+            match cell.state {
+                OurCellState::Water => Color([0, 0, 0]),
+                OurCellState::Food => Color([32, 233, 10]),
+            }
+        } else {
+            let mut is_shark = false;
+            for i in entity_indexes {
+                match unsafe { &entities.get(*i).state } {
+                    &OurEntityState::Predator{food: _, direction: _} => {
+                        is_shark = true;
+                        break;
+                    },
+                    _ => (),
+                }
+            }
+            if is_shark { Color([244, 12, 12]) } else { Color([2, 16, 210])}
+        }
+    }
+
     #[cfg(not(target_os = "emscripten"))]
     {
         let driver = BasicDriver::new();
         driver.init(universe, engine, &mut [
-            Box::new(UniverseDisplayer {}),
-            Box::new(Delay(TICK_DELAY_MS)),
+            // Box::new(UniverseDisplayer {}),
+            // Box::new(Delay(TICK_DELAY_MS)),
             Box::new(FoodSpawnerMiddleware::new()),
+            Box::new(server::ColorServer::new(UNIVERSE_SIZE, color_calculator, "0.0.0.0:7037")),
         ]);
     }
 }

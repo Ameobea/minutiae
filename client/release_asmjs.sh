@@ -1,3 +1,3 @@
 cargo rustc --target=asmjs-unknown-emscripten --release --verbose -- -Z print-link-args -C\
-  link-args="-v -g -O0 --js-library ./src/library_minutaeclient.js -s TOTAL_MEMORY=268435456 -s ASSERTIONS=1 -s NO_EXIT_RUNTIME=1 -s ALLOW_MEMORY_GROWTH=1
+  link-args="-v -g -O3 --js-library ./src/library_minutaeclient.js --closure 1 --llvm-lto 3 -s TOTAL_MEMORY=67108864 -s NO_EXIT_RUNTIME=1
   -s EXPORTED_FUNCTIONS=[\"_main\",\"_rust_eh_personality\",\"_create_client\",\"_get_buffer_ptr\",\"_process_message\"]"
