@@ -58,7 +58,7 @@ const TICK_DELAY_MS: u64 = 16;
 #[cfg(not(target_os = "emscripten"))]
 const UNIVERSE_SIZE: usize = 800;
 #[cfg(not(target_os = "emscripten"))]
-const FISH_COUNT: usize = 31642;
+const FISH_COUNT: usize = 3142;
 #[cfg(not(target_os = "emscripten"))]
 const PREDATOR_COUNT: usize = 0;
 #[cfg(not(target_os = "emscripten"))]
@@ -684,7 +684,7 @@ fn main() {
         driver.init(universe, engine, &mut [
             // Box::new(UniverseDisplayer {}),
             // Box::new(Delay(TICK_DELAY_MS)),
-            Box::new(MinDelay::from_tps(89.97)),
+            Box::new(MinDelay::from_tps(39.97)),
             Box::new(FoodSpawnerMiddleware::new()),
             Box::new(server::ColorServer::new(UNIVERSE_SIZE, color_calculator, "0.0.0.0:7037")),
         ]);

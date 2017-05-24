@@ -4,12 +4,13 @@ extern crate uuid;
 extern crate minutae_libremote;
 
 use std::ffi::CString;
+use std::mem;
 use std::os::raw::{c_char, c_int, c_void};
 use std::ptr::write;
 use std::slice::from_raw_parts;
 
 use uuid::Uuid;
-use minutae_libremote::{ClientMessageContent, Diff, ServerMessage, ServerMessageContents};
+use minutae_libremote::{ClientMessageContent, Color, Diff, ServerMessage, ServerMessageContents};
 
 extern {
     /// Used to initialize the websocket connection and start receiving+processing messages from the server
@@ -40,6 +41,7 @@ pub struct Client {
     pub message_buffer: Vec<ServerMessage>,
     pub last_seq: u32,
     pub uuid: Uuid,
+    pub received_snapshot: bool,
 }
 
 impl Client {
@@ -49,6 +51,7 @@ impl Client {
             message_buffer: Vec::new(),
             last_seq: 0,
             uuid: Uuid::new_v4(),
+            received_snapshot: false,
         }
     }
 
@@ -58,6 +61,14 @@ impl Client {
             let ptr = self.universe.get_unchecked_mut(diff.universe_index).as_mut_ptr() as *mut [u8; 3];
             write(ptr, diff.color.0);
         };
+    }
+
+    pub fn apply_snap(&mut self, snap: Vec<Color>) {
+        debug("Received snapshot from server... attempting to apply it.");
+        debug_assert_eq!(self.universe.len(), snap.len() / 4);
+        for (i, color) in snap.iter().enumerate() {
+            self.apply_diff(Diff {universe_index: i, color: *color});
+        }
     }
 }
 
@@ -76,6 +87,7 @@ pub unsafe extern "C" fn get_buffer_ptr(client: *const Client) -> *const u8 {
 
 #[no_mangle]
 pub extern "C" fn process_message(client: *mut Client, message_ptr: *const u8, message_len: c_int) {
+    debug(&format!("Received message of size {} from server.", message_len));
     // debug(&format!("Processing message of length {} bytes...", message_len));
     let mut client: &mut Client = unsafe { &mut *client };
     // construct a slice from the raw data
@@ -98,7 +110,31 @@ pub extern "C" fn process_message(client: *mut Client, message_ptr: *const u8, m
 // TODO: Actually use sequence numbers in a somewhat intelligent manner
 // TODO: Wait until the response from the snapshot request before applying diffs
 fn handle_message(client: &mut Client, message: ServerMessage) {
-    // if message.seq == client.last_seq + 1 || client.last_seq == 0 {
+    if !client.received_snapshot {
+        // we have to wait until we receive the snapshot before we can start applying diffs, so
+        // queue up all received diffs until we get the snapshot
+        match message.contents {
+            ServerMessageContents::Snapshot(snap) => {
+                debug(&format!("Received snapshot message with seq {}", message.seq));
+                client.received_snapshot = true;
+                client.last_seq = message.seq;
+                client.apply_snap(snap);
+                // swap the buffer out of the client so we can mutably borrow the client
+                let mut messages = mem::replace(&mut client.message_buffer, Vec::new());
+                // sort all pending messages, discard any from before the snapshot was received, and apply the rest
+                messages.sort();
+                for msg in messages {
+                    if msg.seq > message.seq {
+                        handle_message(client, msg);
+                    }
+                }
+            },
+            ServerMessageContents::Diff(_) => client.message_buffer.push(message),
+        }
+        return;
+    }
+
+    if message.seq == client.last_seq + 1 || client.last_seq == 0 {
         match message.contents {
             ServerMessageContents::Diff(diffs) => {
                 // apply all diffs contained in the message
@@ -106,14 +142,7 @@ fn handle_message(client: &mut Client, message: ServerMessage) {
                     client.apply_diff(diff);
                 }
             },
-            ServerMessageContents::Snapshot(snapshot) => {
-                debug("Received snapshot from server... attempting to apply it.");
-                // we have to memcpy the bytes from the message over since we can't change the pointer
-                debug_assert_eq!(client.universe.len(), snapshot.len() / 4);
-                for (i, color) in snapshot.iter().enumerate() {
-                    client.apply_diff(Diff {universe_index: i, color: *color});
-                }
-            }
+            ServerMessageContents::Snapshot(snap) => client.apply_snap(snap),
         }
 
         client.last_seq += 1;
@@ -131,28 +160,30 @@ fn handle_message(client: &mut Client, message: ServerMessage) {
                 client.apply_diff(diff);
             }
         }
-    // } else if message.seq > client.last_seq + 1 {
-    //     // store the message in the client's message buffer and wait until we receive the missing ones
-    //     client.message_buffer.push(message);
-    //     client.message_buffer.sort();
+    } else if message.seq > client.last_seq + 1 {
+        debug(&format!("Received message with sequence number greater than what we expected: {}", message.seq));
+        // store the message in the client's message buffer and wait until we receive the missing ones
+        client.message_buffer.push(message);
+        client.message_buffer.sort();
 
-    //     // if it's been a while since we lost the message, ask to retransmit it and any others we're missing
-    //     let mut last_seen_seq = client.last_seq;
-    //     for message in &client.message_buffer {
-    //         // send retransmission  requests for the missing messages
-    //         for missing_seq in (last_seen_seq + 1)..message.seq {
-    //             let client_msg_bin: Vec<u8> = ClientMessage::Retransmit(missing_seq)
-    //                 .serialize()
-    //                 .expect("Unable to serialize `ClientMessage` while requesting message retransmission!");
-    //             unsafe { send_client_message((&client_msg_bin).as_ptr(), client_msg_bin.len() as c_int) }
-    //             // heap-allocated serialized message will be freed here.
-    //         }
+        // if it's been a while since we lost the message, ask to retransmit it and any others we're missing
+        let mut last_seen_seq = client.last_seq;
+        for message in &client.message_buffer {
+            // send retransmission  requests for the missing messages
+            for missing_seq in (last_seen_seq + 1)..message.seq {
+                // let client_msg_bin: Vec<u8> = ClientMessage::Retransmit(missing_seq)
+                //     .serialize()
+                //     .expect("Unable to serialize `ClientMessage` while requesting message retransmission!");
+                // unsafe { send_client_message((&client_msg_bin).as_ptr(), client_msg_bin.len() as c_int) }
+                // heap-allocated serialized message will be freed here.
+            }
 
-    //         last_seen_seq = message.seq;
-    //     }
-    // } else if message.seq == client.last_seq {
-    //     // TODO
-    // }
+            last_seen_seq = message.seq;
+        }
+    } else if message.seq == client.last_seq {
+        debug(&format!("Received duplicate message with sequence number {}", message.seq));
+        // TODO
+    }
 }
 
 #[no_mangle]
