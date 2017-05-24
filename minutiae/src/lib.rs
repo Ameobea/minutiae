@@ -1,4 +1,4 @@
-//! Minutae Simulation Engine
+//! Minutiae Simulation Engine
 
 #![feature(conservative_impl_trait, test)]
 

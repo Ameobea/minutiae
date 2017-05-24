@@ -1,4 +1,4 @@
-//! Minutae libremote.  See README.md for additional information.
+//! Minutiae libremote.  See README.md for additional information.
 
 #![feature(test)]
 

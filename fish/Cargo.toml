@@ -1,12 +1,13 @@
 [package]
-name = "minutae-fish"
+name = "minutiae-fish"
 version = "0.1.0"
 authors = ["Casey Primozic <me@ameo.link>"]
 
 [dependencies]
-# minutae = "0.2.2"
-minutae = { path = "../minutae" }
-minutae-libremote = { path = "../libremote" }
+# minutiae = "0.2.2"
+minutiae = { path = "../minutiae" }
+minutiae-libremote = { path = "../libremote" }
+clippy = {version = "*", optional = true}
 
 pcg = { git = "https://github.com/codahale/pcg.git" }
 rand = "0.3"

@@ -1,7 +1,7 @@
-//! Minutae simulation client.  See README.md for more information.
+//! Minutiae simulation client.  See README.md for more information.
 
 extern crate uuid;
-extern crate minutae_libremote;
+extern crate minutiae_libremote;
 
 use std::ffi::CString;
 use std::mem;
@@ -10,7 +10,7 @@ use std::ptr::write;
 use std::slice::from_raw_parts;
 
 use uuid::Uuid;
-use minutae_libremote::{ClientMessageContent, Color, Diff, ServerMessage, ServerMessageContents};
+use minutiae_libremote::{ClientMessageContent, Color, Diff, ServerMessage, ServerMessageContents};
 
 extern {
     /// Used to initialize the websocket connection and start receiving+processing messages from the server

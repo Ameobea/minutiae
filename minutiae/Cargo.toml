@@ -1,10 +1,10 @@
 [package]
-name = "minutae"
-version = "0.2.2"
+name = "minutiae"
+version = "0.3.0"
 authors = ["Casey Primozic <me@ameo.link>"]
 description = "Cellular Automata-esque simulation engine involving a 2D universe populated by cells and entities"
-repository = "https://github.com/Ameobea/minutae"
-homepage = "https://github.com/Ameobea/minutae"
+repository = "https://github.com/Ameobea/minutiae"
+homepage = "https://github.com/Ameobea/minutiae"
 keywords = ["simulation", "automata", "engine", "entity"]
 license = "MIT"
 

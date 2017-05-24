@@ -6,8 +6,8 @@ use std::mem;
 use std::ptr::{self, null_mut};
 use std::os::raw::{c_int, c_void, c_float};
 
-use minutae::driver::Driver;
-use minutae::driver::middleware::Middleware;
+use minutiae::driver::Driver;
+use minutiae::driver::middleware::Middleware;
 use super::*;
 
 #[allow(non_camel_case_types)]

@@ -6,14 +6,14 @@ use std::sync::RwLock;
 
 use ws::{self, WebSocket, Handler, Message};
 
-use minutae::universe::Universe;
-use minutae::container::EntityContainer;
-use minutae::cell::{Cell, CellState};
-use minutae::entity::{EntityState, MutEntityState};
-use minutae::action::{CellAction, EntityAction};
-use minutae::engine::Engine;
-use minutae::driver::middleware::Middleware;
-use minutae_libremote::{Color, ClientMessage, ClientMessageContent, Diff, ServerMessage, ServerMessageContents};
+use minutiae::universe::Universe;
+use minutiae::container::EntityContainer;
+use minutiae::cell::{Cell, CellState};
+use minutiae::entity::{EntityState, MutEntityState};
+use minutiae::action::{CellAction, EntityAction};
+use minutiae::engine::Engine;
+use minutiae::driver::middleware::Middleware;
+use minutiae_libremote::{Color, ClientMessage, ClientMessageContent, Diff, ServerMessage, ServerMessageContents};
 
 pub struct ColorServer<C: CellState, E: EntityState<C>, M: MutEntityState> {
     universe_len: usize,

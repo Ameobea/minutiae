@@ -1,10 +1,10 @@
-# Minutae
-Minutae is a simulation engine that operates on a finite 2-dimensional universe populated by **cells** and **entities**.  It is designed to provide a modular system on top of which simulations of various types can be designed.
+# Minutiae
+Minutiae is a simulation engine that operates on a finite 2-dimensional universe populated by **cells** and **entities**.  It is designed to provide a modular system on top of which simulations of various types can be designed.
 
 To view an example of a simulation implemented using this system and compiled to Asm.js using Emscripten, check out https://ameo.link/fish.html
 
 # Application Overview
-The Minutae engine is split into separate modules that can be combined in order to alter the way that simulations are executed.  The entire application is designed to make extensive use of the Rust type system, making it possible to use generic components in multiple different implementations.
+The Minutiae engine is split into separate modules that can be combined in order to alter the way that simulations are executed.  The entire application is designed to make extensive use of the Rust type system, making it possible to use generic components in multiple different implementations.
 
 The library itself has a very low set of dependencies, currently only making use of the `uuid` library and `num_cpus` for the parallel engine.  This makes it easy to compile the library down to a variety of targets; it has been implemented with great success in both asm.js and WebAssembly targets in the browser.
 

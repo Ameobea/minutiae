@@ -1,6 +1,8 @@
 //! A place to experiment with the ideas and concepts of the Minuate simulation
 
 #![feature(alloc_system, conservative_impl_trait, integer_atomics, slice_patterns, test)]
+#![cfg_attr(feature="clippy", feature(plugin))]
+#![cfg_attr(feature="clippy", plugin(clippy(conf_file="../minutiae/clippy.toml")))]
 
 extern crate alloc_system;
 extern crate rand;
@@ -9,8 +11,8 @@ extern crate test;
 extern crate uuid;
 extern crate ws;
 
-extern crate minutae;
-extern crate minutae_libremote;
+extern crate minutiae;
+extern crate minutiae_libremote;
 
 use std::fmt::{self, Display, Formatter};
 
@@ -18,22 +20,22 @@ use pcg::PcgRng;
 use rand::Rng;
 use uuid::Uuid;
 
-use minutae::universe::{Universe, UniverseConf};
-use minutae::container::EntityContainer;
-use minutae::cell::{Cell, CellState};
-use minutae::entity::{Entity, EntityState, MutEntityState};
-use minutae::action::{Action, CellAction, EntityAction, OwnedAction, SelfAction};
-use minutae::engine::Engine;
+use minutiae::universe::{Universe, UniverseConf};
+use minutiae::container::EntityContainer;
+use minutiae::cell::{Cell, CellState};
+use minutiae::entity::{Entity, EntityState, MutEntityState};
+use minutiae::action::{Action, CellAction, EntityAction, OwnedAction, SelfAction};
+use minutiae::engine::Engine;
 #[cfg(not(target_os = "emscripten"))]
-use minutae::engine::parallel::ParallelEngine;
+use minutiae::engine::parallel::ParallelEngine;
 #[cfg(target_os = "emscripten")]
-use minutae::engine::serial::SerialEngine;
-use minutae::engine::iterator::{SerialGridIterator, SerialEntityIterator};
-use minutae::generator::Generator;
-use minutae::util::{calc_offset, get_coords, get_index, iter_visible, manhattan_distance};
-use minutae::driver::{Driver, BasicDriver};
-use minutae::driver::middleware::{Middleware, UniverseDisplayer, Delay, MinDelay};
-use minutae_libremote::Color;
+use minutiae::engine::serial::SerialEngine;
+use minutiae::engine::iterator::{SerialGridIterator, SerialEntityIterator};
+use minutiae::generator::Generator;
+use minutiae::util::{calc_offset, get_coords, get_index, iter_visible, manhattan_distance};
+use minutiae::driver::{Driver, BasicDriver};
+use minutiae::driver::middleware::{Middleware, UniverseDisplayer, Delay, MinDelay};
+use minutiae_libremote::Color;
 
 // :ok_hand:
 #[cfg(target_os = "emscripten")]
@@ -630,7 +632,7 @@ impl FoodSpawnerMiddleware {
 }
 
 fn main() {
-    use minutae::universe;
+    use minutiae::universe;
 
     let mut conf = universe::UniverseConf::default();
     conf.size = UNIVERSE_SIZE;
@@ -693,7 +695,7 @@ fn main() {
 
 #[bench]
 fn universe_step_parallel(b: &mut test::Bencher) {
-    use minutae::universe;
+    use minutiae::universe;
 
     let mut conf = universe::UniverseConf::default();
     conf.size = UNIVERSE_SIZE;
