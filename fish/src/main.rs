@@ -1,6 +1,6 @@
 //! A place to experiment with the ideas and concepts of the Minuate simulation
 
-#![feature(alloc_system, conservative_impl_trait, slice_patterns, test)]
+#![feature(alloc_system, conservative_impl_trait, integer_atomics, slice_patterns, test)]
 
 extern crate alloc_system;
 extern crate rand;
@@ -32,14 +32,14 @@ use minutae::engine::iterator::{SerialGridIterator, SerialEntityIterator};
 use minutae::generator::Generator;
 use minutae::util::{calc_offset, get_coords, get_index, iter_visible, manhattan_distance};
 use minutae::driver::{Driver, BasicDriver};
-use minutae::driver::middleware::{Middleware, UniverseDisplayer, Delay};
+use minutae::driver::middleware::{Middleware, UniverseDisplayer, Delay, MinDelay};
 use minutae_libremote::Color;
 
 // :ok_hand:
 #[cfg(target_os = "emscripten")]
 const UNIVERSE_SIZE: usize = 800;
 #[cfg(target_os = "emscripten")]
-const FISH_COUNT: usize = 2500;
+const FISH_COUNT: usize = 2366;
 #[cfg(target_os = "emscripten")]
 const PREDATOR_COUNT: usize = 0;
 #[cfg(target_os = "emscripten")]
@@ -58,19 +58,19 @@ const TICK_DELAY_MS: u64 = 16;
 #[cfg(not(target_os = "emscripten"))]
 const UNIVERSE_SIZE: usize = 800;
 #[cfg(not(target_os = "emscripten"))]
-const FISH_COUNT: usize = 3508;
+const FISH_COUNT: usize = 31642;
 #[cfg(not(target_os = "emscripten"))]
 const PREDATOR_COUNT: usize = 0;
 #[cfg(not(target_os = "emscripten"))]
 const VIEW_DISTANCE: usize = 4;
 // there's a one in `this` chance of spawning a food cluster each tick
 #[cfg(not(target_os = "emscripten"))]
-const FOOD_SPAWN_RARITY: usize = 4;
+const FOOD_SPAWN_RARITY: usize = 2;
 // this number of food cells are spawned (minus overlaps)
 #[cfg(not(target_os = "emscripten"))]
-const FOOD_SPAWN_COUNT: usize = 9;
+const FOOD_SPAWN_COUNT: usize = 226;
 #[cfg(not(target_os = "emscripten"))]
-const FOOD_SPAWN_RADIUS: isize = 7;
+const FOOD_SPAWN_RADIUS: isize = 25;
 
 const SCHOOL_SPACING: usize = 2;
 
@@ -348,7 +348,6 @@ impl Generator<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, O
         Vec<Vec<Entity<OurCellState, OurEntityState, OurMutEntityState>>>,
     ) {
         println!("Generating world...");
-        // let mut rng = PcgRng::new_unseeded().with_stream(self.0);
         let length = conf.size * conf.size;
         let mut cells = Vec::with_capacity(length);
         for _ in 0..length {
@@ -357,7 +356,7 @@ impl Generator<OurCellState, OurEntityState, OurMutEntityState, OurCellAction, O
         }
 
         let mut entities = vec![Vec::new(); length];
-        let mut rng = PcgRng::new_unseeded();
+        let mut rng = PcgRng::new_unseeded().with_stream(self.0);
         rng.set_stream(10101010101);
 
         // populate the world with `FISH_COUNT` randomly placed fish
@@ -681,10 +680,11 @@ fn main() {
 
     #[cfg(not(target_os = "emscripten"))]
     {
-        let driver = BasicDriver::new();
+        let driver = BasicDriver;
         driver.init(universe, engine, &mut [
             // Box::new(UniverseDisplayer {}),
             // Box::new(Delay(TICK_DELAY_MS)),
+            Box::new(MinDelay::from_tps(89.97)),
             Box::new(FoodSpawnerMiddleware::new()),
             Box::new(server::ColorServer::new(UNIVERSE_SIZE, color_calculator, "0.0.0.0:7037")),
         ]);

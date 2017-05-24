@@ -8,6 +8,7 @@ extern crate flate2;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate uuid;
 
 use std::io::Write;
 use std::cmp::{PartialOrd, Ord, Ordering};
@@ -15,6 +16,7 @@ use std::cmp::{PartialOrd, Ord, Ordering};
 use bincode::{serialize, deserialize, serialize_into, serialized_size, Infinite};
 use flate2::Compression;
 use flate2::write::{DeflateEncoder, DeflateDecoder};
+use uuid::Uuid;
 
 /// All messages that are passed between the server and clients are of this form.  Each message is accompanied by a sequence
 /// number that is used to ensure that they're applied in order.  There will never be a case in which sequence numbers are
@@ -71,7 +73,7 @@ pub enum ServerMessageContents {
     Snapshot(Vec<Color>),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Color(pub [u8; 3]);
 
 /// Encodes the difference between two different steps of a simulation.  Currently simply contains a universe index and
@@ -84,7 +86,14 @@ pub struct Diff {
 
 /// A message sent from a client to the server
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum ClientMessage {
+pub struct ClientMessage {
+    pub client_id: Uuid,
+    pub content: ClientMessageContent,
+}
+
+/// The payload of a message sent from a client to the server
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ClientMessageContent {
     Retransmit(u32), // a request to retransmit a missed diff packet
     SendSnapshot, // a request to send a snapshot of the universe as it currently exists
     // some custom action applied to a particular universe coordinate that should be handled by the server
@@ -95,15 +104,22 @@ pub enum ClientMessage {
 }
 
 impl ClientMessage {
-    /// Encodes the message in binary format without compressing it
-    pub fn serialize(&self) -> Result<Vec<u8>, String> {
-        serialize(self, Infinite).map_err(|err| format!("Unable to serialize `ClientMessage`: {:?}", err))
-    }
-
     /// Decodes a binary-encoded message.
     pub fn deserialize(data: &[u8]) -> Result<Self, String> {
         deserialize(data)
             .map_err(|err| format!("Error deserializing decompressed binary into `ClientMessage`: {:?}", err))
+    }
+}
+
+impl ClientMessageContent {
+    /// Given the UUID of the client, wraps the payload into a `ClietMessage` and serializes it
+    /// in binary format without compressing it
+    pub fn serialize(self, client_uuid: Uuid) -> Result<Vec<u8>, String> {
+        let msg = ClientMessage {
+            client_id: client_uuid,
+            content: self,
+        };
+        serialize(&msg, Infinite).map_err(|err| format!("Unable to serialize `ClientMessage`: {:?}", err))
     }
 }
 
@@ -147,8 +163,8 @@ fn server_message_decode(b: &mut test::Bencher) {
 
 #[test]
 fn clientmessage_serialize_deserialize() {
-    let message = ClientMessage::CellAction{action_id: 8u8, universe_index: 999};
-    let serialized: Vec<u8> = message.clone().serialize().unwrap();
+    let content = ClientMessageContent::CellAction{action_id: 8u8, universe_index: 999};
+    let serialized: Vec<u8> = content.clone().serialize(Uuid::new_v4()).unwrap();
     let deserialized = ClientMessage::deserialize(&serialized).unwrap();
-    assert_eq!(message, deserialized);
+    assert_eq!(content, deserialized.content);
 }

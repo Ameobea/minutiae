@@ -1,5 +1,6 @@
 //! Minutae simulation client.  See README.md for more information.
 
+extern crate uuid;
 extern crate minutae_libremote;
 
 use std::ffi::CString;
@@ -7,7 +8,8 @@ use std::os::raw::{c_char, c_int, c_void};
 use std::ptr::write;
 use std::slice::from_raw_parts;
 
-use minutae_libremote::{ClientMessage, Diff, ServerMessage, ServerMessageContents};
+use uuid::Uuid;
+use minutae_libremote::{ClientMessageContent, Diff, ServerMessage, ServerMessageContents};
 
 extern {
     /// Used to initialize the websocket connection and start receiving+processing messages from the server
@@ -37,6 +39,7 @@ pub struct Client {
     pub universe: Vec<[u8; 4]>,
     pub message_buffer: Vec<ServerMessage>,
     pub last_seq: u32,
+    pub uuid: Uuid,
 }
 
 impl Client {
@@ -45,6 +48,7 @@ impl Client {
             universe: vec![[0u8, 0u8, 0u8, 255u8]; universe_size * universe_size * 4],
             message_buffer: Vec::new(),
             last_seq: 0,
+            uuid: Uuid::new_v4(),
         }
     }
 
@@ -72,7 +76,7 @@ pub unsafe extern "C" fn get_buffer_ptr(client: *const Client) -> *const u8 {
 
 #[no_mangle]
 pub extern "C" fn process_message(client: *mut Client, message_ptr: *const u8, message_len: c_int) {
-    debug(&format!("Processing message of length {} bytes...", message_len));
+    // debug(&format!("Processing message of length {} bytes...", message_len));
     let mut client: &mut Client = unsafe { &mut *client };
     // construct a slice from the raw data
     let slice: &[u8] = unsafe { from_raw_parts(message_ptr, message_len as usize) };
@@ -91,6 +95,8 @@ pub extern "C" fn process_message(client: *mut Client, message_ptr: *const u8, m
     // The same goes for drawing the updated universe to the canas.
 }
 
+// TODO: Actually use sequence numbers in a somewhat intelligent manner
+// TODO: Wait until the response from the snapshot request before applying diffs
 fn handle_message(client: &mut Client, message: ServerMessage) {
     // if message.seq == client.last_seq + 1 || client.last_seq == 0 {
         match message.contents {
@@ -100,7 +106,14 @@ fn handle_message(client: &mut Client, message: ServerMessage) {
                     client.apply_diff(diff);
                 }
             },
-            _ => unimplemented!(),
+            ServerMessageContents::Snapshot(snapshot) => {
+                debug("Received snapshot from server... attempting to apply it.");
+                // we have to memcpy the bytes from the message over since we can't change the pointer
+                debug_assert_eq!(client.universe.len(), snapshot.len() / 4);
+                for (i, color) in snapshot.iter().enumerate() {
+                    client.apply_diff(Diff {universe_index: i, color: *color});
+                }
+            }
         }
 
         client.last_seq += 1;
@@ -140,6 +153,14 @@ fn handle_message(client: &mut Client, message: ServerMessage) {
     // } else if message.seq == client.last_seq {
     //     // TODO
     // }
+}
+
+#[no_mangle]
+/// Sends a message to the server requesting a snapshot of the current universe
+pub unsafe extern "C" fn request_snapshot(client: *const Client) {
+    let msg = ClientMessageContent::SendSnapshot.serialize((*client).uuid).unwrap();
+    debug("Sending message requesting snapshot from the server...");
+    send_client_message(msg.as_ptr(), msg.len() as i32);
 }
 
 pub fn main() {

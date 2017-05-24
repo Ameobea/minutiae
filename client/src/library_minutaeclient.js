@@ -41,6 +41,8 @@ mergeInto(LibraryManager.library, {
         processMessage(clientPtr, bufPtr, ta.length);
         // once the message has been processed, update the canvas from the pixel data buffer.
         canvas_render(pixdataPtr);
+        // free the allocated memory to avoid leaking it
+        Module._free(bufPtr);
       });
     }
 
@@ -51,6 +53,8 @@ mergeInto(LibraryManager.library, {
 
     socket.onopen = function(e) {
       console.log('Successfully opened WebSocket connection to server!');
+      // request an initial snapshot from the server with the full universe to start off
+      Module.ccall('request_snapshot', null, [null], []);
     }
   },
 
@@ -58,8 +62,10 @@ mergeInto(LibraryManager.library, {
    * Given a pointer to a buffer containing a serialized `ClientMessage` to be sent to the server, sends it over
    * the websocket connection and deallocates the buffer.
    */
-  send_client_message: function(pointer, length) {
-    // TODO
+  send_client_message: function(ptr, len) {
+    // create a typed array view into Emscripten's memory at the given index and send it over the websocket
+    var buf = new Uint8ClampedArray(HEAP8.buffer, ptr, len);
+    socket.send(buf);
   },
 
   /**
