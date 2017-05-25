@@ -7,6 +7,9 @@
 extern crate alloc_system;
 extern crate rand;
 extern crate pcg;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 extern crate test;
 extern crate uuid;
 extern crate ws;
@@ -35,7 +38,9 @@ use minutiae::generator::Generator;
 use minutiae::util::{calc_offset, get_coords, get_index, iter_visible, manhattan_distance};
 use minutiae::driver::{Driver, BasicDriver};
 use minutiae::driver::middleware::{Middleware, UniverseDisplayer, Delay, MinDelay};
-use minutiae_libremote::Color;
+use minutiae_libremote::{Color, ThinClientMessage, ThinServerMessage};
+
+use server::{Server, ColorServer};
 
 // :ok_hand:
 #[cfg(target_os = "emscripten")]
@@ -682,13 +687,39 @@ fn main() {
 
     #[cfg(not(target_os = "emscripten"))]
     {
+        fn calc_color(
+            cell: &Cell<OurCellState>,
+            entity_indexes: &[usize],
+            entity_container: &EntityContainer<OurCellState, OurEntityState, OurMutEntityState>
+        ) -> Color {
+            if entity_indexes.len() != 0 {
+                for i in entity_indexes {
+                    match unsafe { &entity_container.get(*i).state } {
+                        &OurEntityState::Predator{..} => {
+                            return Color([233, 121, 78]);
+                        },
+                        _ => (),
+                    }
+                }
+                Color([12, 24, 222])
+            } else {
+                match cell.state {
+                    OurCellState::Water => Color([0, 0, 0]),
+                    OurCellState::Food => Color([12, 231, 2]),
+                }
+            }
+        }
+
+        let server_logic = server::ColorServer::new(UNIVERSE_SIZE, calc_color);
+        let seq = server_logic.seq.clone();
+        let server = server::Server::new(UNIVERSE_SIZE, "0.0.0.0:7037", server_logic, seq);
         let driver = BasicDriver;
         driver.init(universe, engine, &mut [
             // Box::new(UniverseDisplayer {}),
             // Box::new(Delay(TICK_DELAY_MS)),
             Box::new(MinDelay::from_tps(39.97)),
             Box::new(FoodSpawnerMiddleware::new()),
-            Box::new(server::ColorServer::new(UNIVERSE_SIZE, color_calculator, "0.0.0.0:7037")),
+            Box::new(server),
         ]);
     }
 }

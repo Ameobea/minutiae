@@ -1,10 +1,12 @@
 //! Sets up code for communicating changes in universe state with remote clients.
 
 use std::{mem, ptr, thread};
+use std::marker::PhantomData;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
-use ws::{self, WebSocket, Handler, Message};
+use serde::{Serialize, Deserialize};
+use ws::{self, WebSocket, Handler};
 
 use minutiae::universe::Universe;
 use minutiae::container::EntityContainer;
@@ -13,110 +15,63 @@ use minutiae::entity::{EntityState, MutEntityState};
 use minutiae::action::{CellAction, EntityAction};
 use minutiae::engine::Engine;
 use minutiae::driver::middleware::Middleware;
-use minutiae_libremote::{Color, ClientMessage, ClientMessageContent, Diff, ServerMessage, ServerMessageContents};
+use minutiae_libremote::{
+    Message, Color, ThinClientMessage, ThinClientMessageContent, Diff,
+    ThinServerMessage, ThinServerMessageContents
+};
 
-pub struct ColorServer<C: CellState, E: EntityState<C>, M: MutEntityState> {
-    universe_len: usize,
-    last_colors: RwLock<Vec<Color>>,
-    diffs: Vec<Diff>,
-    color_calculator: fn(&Cell<C>, entity_indexes: &[usize], entity_container: &EntityContainer<C, E, M>) -> Color,
-    ws_broadcaster: ws::Sender,
-    seq: AtomicU32,
+pub trait ServerLogic<
+    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>,
+    SM: Message, CM: Message
+> : Sized {
+    // called every tick; the resulting messages are broadcast to every connected client.
+    fn tick(&mut self, universe: &mut Universe<C, E, M, CA, EA>) -> Option<SM>;
+    // called for every message received from a client.
+    fn handle_client_message(&mut Server<C, E, M, CA, EA, SM, CM, Self>, &CM) -> Option<SM>;
 }
 
-struct WsServerHandler<C: CellState, E: EntityState<C>, M: MutEntityState> {
-    out: ws::Sender,
-    colorserver_ptr: Spaceship<ColorServer<C, E, M>>,
+pub struct Server<
+    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>,
+    SM: Message, CM: Message, L: ServerLogic<C, E, M, CA, EA, SM, CM>
+> {
+    pub universe_len: usize,
+    logic: L,
+    // sender that can be used to broadcast a message to all connected clients
+    pub ws_broadcaster: ws::Sender,
+    pub seq: Arc<AtomicU32>,
+    __phantom_c: PhantomData<C>,
+    __phantom_e: PhantomData<E>,
+    __phantom_m: PhantomData<M>,
+    __phantom_ca: PhantomData<CA>,
+    __phantom_ea: PhantomData<EA>,
+    __phantom_sm: PhantomData<SM>,
+    __phamtom_cm: PhantomData<CM>,
 }
 
-impl<C: CellState, E: EntityState<C>, M: MutEntityState> WsServerHandler<C, E, M> {
-    pub fn new(out: ws::Sender, colorserver_ptr: Spaceship<ColorServer<C, E, M>>) -> Self {
-        WsServerHandler { out, colorserver_ptr }
-    }
-}
-
-struct Spaceship<T>(*const T);
-
-impl<T> Clone for Spaceship<T> {
-    fn clone(&self) -> Self {
-        Spaceship(self.0)
-    }
-}
-
-unsafe impl<T> Send for Spaceship<T> {}
-
-impl<C: CellState, E: EntityState<C>, M: MutEntityState> Handler for WsServerHandler<C, E, M> {
-    fn on_message(&mut self, msg: ws::Message) -> Result<(), ws::Error> {
-        match msg {
-            ws::Message::Binary(bin) => {
-                // try to convert the received message into a `ClientMessage`
-                let client_msg = match ClientMessage::deserialize(&bin) {
-                    Ok(m) => m,
-                    Err(err) => {
-                        println!("Error deserializing `ClientMessage` from binary data sent from user: {:?}", err);
-                        return Ok(())
-                    }
-                };
-
-                match client_msg.content {
-                    ClientMessageContent::SendSnapshot => {
-                        println!("Received request to send snapshot...");
-                        // calculate the snapshot by pulling the data from the `ColorServer` pointer
-                        let server: &ColorServer<C, E, M> = unsafe { &*self.colorserver_ptr.0 };
-                        let colors = server.last_colors.read().expect("Unable to lock colors vector for reading!").clone();
-                        let msg = ServerMessage {
-                            seq: server.seq.load(Ordering::Relaxed),
-                            contents: ServerMessageContents::Snapshot(colors),
-                        }.serialize().expect("Unable to serialize snapshot message!");
-                        return self.out.send::<&[u8]>(&msg)
-                    },
-                    _ => unimplemented!(),
-                }
-            },
-            ws::Message::Text(text) => println!("Someone tried to send a text message over the WebSocket: {}", text),
-        }
-
-        Ok(())
-    }
-}
-
-fn init_ws_server<C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static>(
-    ws_host: &'static str, ship: Spaceship<ColorServer<C, E, M>>
-) -> ws::Sender {
-    let server = WebSocket::new(move |out: ws::Sender| {
-        WsServerHandler::new(out, ship.clone())
-    }).expect("Unable to initialize websocket server!");
-
-    let broadcaster = server.broadcaster();
-
-    // start the server on a separate thread
-    thread::spawn(move || {
-        server.listen(ws_host).expect("Unable to initialize websocket server!");
-    });
-
-    broadcaster
-}
-
-impl<C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static> ColorServer<C, E, M> {
-    pub fn new(
-        universe_size: usize, color_calculator: fn(
-            &Cell<C>, entity_indexes: &[usize],
-            entity_container: &EntityContainer<C, E, M>
-        ) -> Color, ws_host: &'static str,
-    ) -> Box<Self> { // boxed so we're sure it doesn't move and we can pass pointers to it around
-        let server = Box::new(ColorServer {
+impl<
+    C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static,
+    CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static,
+    SM: Message + 'static, CM: Message + 'static, L: ServerLogic<C, E, M, CA, EA, SM, CM> + 'static
+> Server<C, E, M, CA, EA, SM, CM, L> {
+    pub fn new(universe_size: usize, ws_host: &'static str, logic: L, seq: Arc<AtomicU32>) -> Box<Self> {
+        let mut server = Box::new(Server {
             universe_len: universe_size * universe_size,
-            last_colors: RwLock::new(vec![Color([0, 0, 0]); universe_size * universe_size]),
-            diffs: Vec::new(),
-            color_calculator: color_calculator,
+            logic,
             ws_broadcaster: unsafe { mem::uninitialized() },
-            seq: AtomicU32::new(1),
+            seq,
+            __phantom_c: PhantomData,
+            __phantom_e: PhantomData,
+            __phantom_m: PhantomData,
+            __phantom_ca: PhantomData,
+            __phantom_ea: PhantomData,
+            __phantom_sm: PhantomData,
+            __phamtom_cm: PhantomData,
         });
 
         // get a pointer to the inner server and use it to initialize the websocket server
         let server_ptr = Box::into_raw(server);
         unsafe {
-            let server_ref: &mut ColorServer<C, E, M> = &mut *server_ptr;
+            let server_ref: &mut Server<C, E, M, CA, EA, SM, CM, L> = &mut *server_ptr;
             ptr::write(&mut server_ref.ws_broadcaster as *mut ws::Sender, init_ws_server(ws_host, Spaceship(server_ptr)));
             Box::from_raw(server_ptr)
         }
@@ -124,12 +79,60 @@ impl<C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 's
 }
 
 impl<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, M, CA, EA>
-> Middleware<C, E, M, CA, EA, N> for Box<ColorServer<C, E, M>> {
+    C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static,
+    CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static,
+    SM: Message + 'static, CM: Message + 'static, L: ServerLogic<C, E, M, CA, EA, SM, CM> + 'static
+> Server<C, E, M, CA, EA, SM, CM, L> {
+    pub fn get_seq(&self) -> u32 {
+        self.seq.load(Ordering::Relaxed)
+    }
+}
+
+impl<
+    C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static,
+    CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static, N: Engine<C, E, M, CA, EA>,
+    SM: Message + 'static, CM: Message + 'static, L: ServerLogic<C, E, M, CA, EA, SM, CM> + 'static
+> Middleware<C, E, M, CA, EA, N> for Box<Server<C, E, M, CA, EA, SM, CM, L>> {
     fn after_render(&mut self, universe: &mut Universe<C, E, M, CA, EA>) {
+        if let Some(msg) = self.logic.tick(universe) {
+            self.ws_broadcaster.send::<&[u8]>(msg.serialize().unwrap().as_slice().into());
+        }
+        self.seq.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+
+pub struct ColorServer<C: CellState, E: EntityState<C>, M: MutEntityState> {
+    pub universe_len: usize,
+    pub colors: RwLock<Vec<Color>>,
+    pub color_calculator: fn(&Cell<C>, entity_indexes: &[usize], entity_container: &EntityContainer<C, E, M>) -> Color,
+    pub seq: Arc<AtomicU32>,
+}
+
+impl<C: CellState, E: EntityState<C>, M: MutEntityState> ColorServer<C, E, M> {
+    pub fn new(
+        universe_size: usize, color_calculator: fn(
+            &Cell<C>, entity_indexes: &[usize], entity_container: &EntityContainer<C, E, M>
+        ) -> Color
+    ) -> Self { // boxed so we're sure it doesn't move and we can pass pointers to it around
+        let universe_len = universe_size * universe_size;
+        ColorServer {
+            universe_len,
+            colors: RwLock::new(vec![Color([0, 0, 0]); universe_len]),
+            color_calculator,
+            seq: Arc::new(AtomicU32::new(0)),
+        }
+    }
+}
+
+impl<
+    C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static,
+    CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static,
+> ServerLogic<C, E, M, CA, EA, ThinServerMessage, ThinClientMessage> for ColorServer<C, E, M> {
+    fn tick(&mut self, universe: &mut Universe<C, E, M, CA, EA>) -> Option<ThinServerMessage> {
         // TODO: Create an option for making this parallel because it's a 100% parallelizable task
         let mut diffs = Vec::new();
-        let mut colors = self.last_colors.write().expect("Unable to lock colors vector for writing!");
+        let mut colors = self.colors.write().expect("Unable to lock colors vector for writing!");
         for i in 0..self.universe_len {
             let cell = unsafe { universe.cells.get_unchecked(i) };
             let entity_indexes = universe.entities.get_entities_at(i);
@@ -144,15 +147,106 @@ impl<
         }
 
         // create a `ServerMessage` out of the diffs, serialize/compress it, and broadcast it to all connected clients
-        let msg = ServerMessage {
+        Some(ThinServerMessage {
             seq: self.seq.load(Ordering::Relaxed),
-            contents: ServerMessageContents::Diff(diffs),
-        }.serialize().expect("Unable to convert `ServerMessage` into binary!");
-        let ws_msg: Message = msg.into();
-        self.ws_broadcaster.broadcast(ws_msg).expect("Unable to send message over websocket!");
-
-        // finally, clear the buffer so it's fresh for the next iteration
-        // self.diffs.clear();
-        self.seq.fetch_add(1, Ordering::Relaxed);
+            contents: ThinServerMessageContents::Diff(diffs),
+        })
     }
+
+    fn handle_client_message(
+        server: &mut Server<C, E, M, CA, EA, ThinServerMessage, ThinClientMessage, Self>, client_message: &ThinClientMessage
+    ) -> Option<ThinServerMessage> {
+        match client_message.content {
+            ThinClientMessageContent::SendSnapshot => {
+                // create the snapshot by cloning the colors from the server.
+                let snap: Vec<Color> = (*server).logic.colors.read().unwrap().clone();
+                Some(ThinServerMessage {
+                    seq: (*server).get_seq(),
+                    contents: ThinServerMessageContents::Snapshot(snap),
+                })
+            },
+            _ => None, // TOOD
+        }
+    }
+}
+
+struct WsServerHandler<
+    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>,
+    SM: Message, CM: Message, L: ServerLogic<C, E, M, CA, EA, SM, CM>
+>  {
+    out: ws::Sender,
+    server_ptr: Spaceship<Server<C, E, M, CA, EA, SM, CM, L>>,
+}
+
+impl<
+    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>,
+    SM: Message, CM: Message, L: ServerLogic<C, E, M, CA, EA, SM, CM>
+> WsServerHandler<C, E, M, CA, EA, SM, CM, L> {
+    pub fn new(out: ws::Sender, server_ptr: Spaceship<Server<C, E, M, CA, EA, SM, CM, L>>) -> Self {
+        WsServerHandler { out, server_ptr }
+    }
+}
+
+struct Spaceship<T>(*mut T);
+
+impl<T> Clone for Spaceship<T> {
+    fn clone(&self) -> Self {
+        Spaceship(self.0)
+    }
+}
+
+unsafe impl<T> Send for Spaceship<T> {}
+
+impl<
+    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>,
+    SM: Message, CM: Message, L: ServerLogic<C, E, M, CA, EA, CM, SM>
+> Handler for WsServerHandler<C, E, M, CA, EA, CM, SM, L> {
+    fn on_message(&mut self, msg: ws::Message) -> Result<(), ws::Error> {
+        match msg {
+            ws::Message::Binary(bin) => {
+                // try to convert the received message into a `ClientMessage`
+                let client_msg: SM = match SM::deserialize(&bin) {
+                    Ok(m) => m,
+                    Err(err) => {
+                        println!("Error deserializing `ClientMessage` from binary data sent from user: {:?}", err);
+                        return Ok(())
+                    }
+                };
+
+                let server: &mut Server<C, E, M, CA, EA, CM, SM, L> = unsafe { &mut *self.server_ptr.0 };
+                match L::handle_client_message(server, &client_msg) {
+                    Some(msg) => {
+                        // serialize and transmit the message to the client
+                        let serialized: Vec<u8> = msg.serialize().expect("Unable to send message to client!");
+                        self.out.send::<&[u8]>(serialized.as_slice().into());
+                    },
+                    None => (),
+                }
+            },
+            ws::Message::Text(text) => println!("Someone tried to send a text message over the WebSocket: {}", text),
+        }
+
+        Ok(())
+    }
+}
+
+fn init_ws_server<
+    C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static,
+    CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static,
+    SM: Message + 'static, CM: Message + 'static, L: ServerLogic<C, E, M, CA, EA, SM, CM> + 'static
+> (
+    ws_host: &'static str, ship: Spaceship<Server<C, E, M, CA, EA, SM, CM, L>>
+) -> ws::Sender {
+    let server = WebSocket::new(move |out: ws::Sender| {
+        WsServerHandler::new(out, ship.clone())
+    }).expect("Unable to initialize websocket server!");
+
+    let broadcaster = server.broadcaster();
+
+    // start the server on a separate thread
+    thread::spawn(move || {
+        server.listen(ws_host).expect("Unable to initialize websocket server!");
+    });
+
+    broadcaster
 }

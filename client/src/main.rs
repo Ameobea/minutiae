@@ -10,7 +10,10 @@ use std::ptr::write;
 use std::slice::from_raw_parts;
 
 use uuid::Uuid;
-use minutiae_libremote::{ClientMessageContent, Color, Diff, ServerMessage, ServerMessageContents};
+use minutiae_libremote::{
+    Message, ThinClientMessage, ThinClientMessageContent, Color,
+    Diff, ThinServerMessage, ThinServerMessageContents
+};
 
 extern {
     /// Used to initialize the websocket connection and start receiving+processing messages from the server
@@ -38,7 +41,7 @@ fn error(msg: &str) {
 /// Holds the state of the universe as viewed the client.  Only holds a shallow view as calculated by the server.
 pub struct Client {
     pub universe: Vec<[u8; 4]>,
-    pub message_buffer: Vec<ServerMessage>,
+    pub message_buffer: Vec<ThinServerMessage>,
     pub last_seq: u32,
     pub uuid: Uuid,
     pub received_snapshot: bool,
@@ -92,11 +95,11 @@ pub extern "C" fn process_message(client: *mut Client, message_ptr: *const u8, m
     let mut client: &mut Client = unsafe { &mut *client };
     // construct a slice from the raw data
     let slice: &[u8] = unsafe { from_raw_parts(message_ptr, message_len as usize) };
-    // decompress and deserialize the message buffer into a `ServerMessage`
-    let message: ServerMessage = match ServerMessage::deserialize(slice) {
+    // decompress and deserialize the message buffer into a `ThinServerMessage`
+    let message: ThinServerMessage = match ThinServerMessage::deserialize(slice) {
         Ok(msg) => msg,
         Err(err) => {
-            println!("Error while deserializing `ServerMessage`: {:?}", err);
+            println!("Error while deserializing `ThinServerMessage`: {:?}", err);
             return;
         },
     };
@@ -109,12 +112,12 @@ pub extern "C" fn process_message(client: *mut Client, message_ptr: *const u8, m
 
 // TODO: Actually use sequence numbers in a somewhat intelligent manner
 // TODO: Wait until the response from the snapshot request before applying diffs
-fn handle_message(client: &mut Client, message: ServerMessage) {
+fn handle_message(client: &mut Client, message: ThinServerMessage) {
     if !client.received_snapshot {
         // we have to wait until we receive the snapshot before we can start applying diffs, so
         // queue up all received diffs until we get the snapshot
         match message.contents {
-            ServerMessageContents::Snapshot(snap) => {
+            ThinServerMessageContents::Snapshot(snap) => {
                 debug(&format!("Received snapshot message with seq {}", message.seq));
                 client.received_snapshot = true;
                 client.last_seq = message.seq;
@@ -129,20 +132,20 @@ fn handle_message(client: &mut Client, message: ServerMessage) {
                     }
                 }
             },
-            ServerMessageContents::Diff(_) => client.message_buffer.push(message),
+            ThinServerMessageContents::Diff(_) => client.message_buffer.push(message),
         }
         return;
     }
 
     if message.seq == client.last_seq + 1 || client.last_seq == 0 {
         match message.contents {
-            ServerMessageContents::Diff(diffs) => {
+            ThinServerMessageContents::Diff(diffs) => {
                 // apply all diffs contained in the message
                 for diff in diffs {
                     client.apply_diff(diff);
                 }
             },
-            ServerMessageContents::Snapshot(snap) => client.apply_snap(snap),
+            ThinServerMessageContents::Snapshot(snap) => client.apply_snap(snap),
         }
 
         client.last_seq += 1;
@@ -150,7 +153,7 @@ fn handle_message(client: &mut Client, message: ServerMessage) {
         // if we have buffered messages to handle, apply them now.
         let diffs_list: Vec<Vec<Diff>> = client.message_buffer.drain(..).map(|message| -> Vec<Diff> {
             match message.contents {
-                ServerMessageContents::Diff(diffs) => diffs,
+                ThinServerMessageContents::Diff(diffs) => diffs,
                 _ => Vec::new(),
             }
         }).collect();
@@ -189,7 +192,11 @@ fn handle_message(client: &mut Client, message: ServerMessage) {
 #[no_mangle]
 /// Sends a message to the server requesting a snapshot of the current universe
 pub unsafe extern "C" fn request_snapshot(client: *const Client) {
-    let msg = ClientMessageContent::SendSnapshot.serialize((*client).uuid).unwrap();
+    let msg = ThinClientMessage {
+        seq: (*client).last_seq,
+        client_id: (*client).uuid,
+        content: ThinClientMessageContent::SendSnapshot,
+    }.serialize().unwrap();
     debug("Sending message requesting snapshot from the server...");
     send_client_message(msg.as_ptr(), msg.len() as i32);
 }
