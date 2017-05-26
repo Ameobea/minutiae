@@ -4,10 +4,11 @@ version = "0.1.0"
 authors = ["Casey Primozic <me@ameo.link>"]
 
 [dependencies]
+minutiae = { path = "../minutiae" }
 minutiae-libremote = { path = "../libremote" }
 uuid = { version = "0.5.0", features = ["v4"] }
 clippy = {version = "*", optional = true}
 
 [features]
-meduim = []
+hybrid = []
 fat = []

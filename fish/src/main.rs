@@ -413,7 +413,8 @@ fn our_entity_driver<'a>(
             //  5. Move away from nearby fish that are less than `SCHOOL_SPACING` units away
 
             let mut closest_predator: Option<(usize, usize, usize)> = None;
-            // iterate through all visible cells and look for the predator + food item which is closest to us and run away from it
+            // iterate through all visible cells and look for the predator + food item
+            // which is closest to us and run away from it
             for (x, y) in iter_visible(cur_x, cur_y, VIEW_DISTANCE, UNIVERSE_SIZE) {
                 let universe_index = get_index(x, y, UNIVERSE_SIZE);
                 for entity_index in entities.get_entities_at(universe_index) {
@@ -492,10 +493,10 @@ fn our_entity_driver<'a>(
                 None => (),
             }
 
-            // // TODO: Implement more intelligent schooling behavior
-            // // if we're on the same index as another fish and aren't chasing food or running from a predator, pick a random
-            // // direction to move and return.
-            // if entities.get_entities_at(source_universe_index).len() > 1 {
+            // TODO: Implement more intelligent schooling behavior
+            // if we're on the same index as another fish and aren't chasing food or running from a predator
+            // pick a random direction to move and return.
+            if entities.get_entities_at(source_universe_index).len() > 1 {
                 let mut mut_state_inner = entity.mut_state.take();
                 let (x_offset, y_offset) = {
                     let mut rng = mut_state_inner.rng.as_mut().unwrap();
@@ -505,7 +506,7 @@ fn our_entity_driver<'a>(
 
                 let self_action = SelfAction::Translate(x_offset, y_offset);
                 return self_action_executor(self_action);
-            // }
+            }
         },
         OurEntityState::Predator{food: _, direction} => {
             // 1. If we're adjascent to a fish, eat it.
@@ -579,7 +580,8 @@ fn our_entity_driver<'a>(
                         let x_dst = cur_x as isize + x as isize;
                         let y_dst = cur_y as isize + y as isize;
                         if x_dst < 0 || x_dst as usize >= UNIVERSE_SIZE || y_dst < 0 || y_dst as usize >= UNIVERSE_SIZE {
-                            // movement would cause us to try to leave the universe, so generate a new random vector
+                            // movement would cause us to try to leave the universe,
+                            // so generate a new random vector
                             get_random_vector()
                         } else { (x, y) }
                     },
@@ -644,7 +646,9 @@ fn main() {
     #[cfg(target_os = "emscripten")]
     let engine: OurEngineType = Box::new(OurEngine {});
     #[cfg(not(target_os = "emscripten"))]
-    let engine = Box::new(ParallelEngine::new(SerialGridIterator::new(UNIVERSE_SIZE * UNIVERSE_SIZE), exec_actions, our_entity_driver));
+    let engine = Box::new(
+        ParallelEngine::new(SerialGridIterator::new(UNIVERSE_SIZE * UNIVERSE_SIZE), exec_actions, our_entity_driver)
+    );
 
     let universe = universe::Universe::new(
         conf,
@@ -730,7 +734,9 @@ fn universe_step_parallel(b: &mut test::Bencher) {
 
     let mut conf = universe::UniverseConf::default();
     conf.size = UNIVERSE_SIZE;
-    let mut engine = Box::new(ParallelEngine::new(SerialGridIterator::new(UNIVERSE_SIZE * UNIVERSE_SIZE), exec_actions, our_entity_driver));
+    let mut engine = Box::new(
+        ParallelEngine::new(SerialGridIterator::new(UNIVERSE_SIZE * UNIVERSE_SIZE), exec_actions, our_entity_driver)
+    );
 
     let mut universe = Universe::new(
         conf,

@@ -1,6 +1,7 @@
 //! Minutiae simulation client.  See README.md for more information.
 
 extern crate uuid;
+extern crate minutiae;
 extern crate minutiae_libremote;
 
 use std::ffi::CString;
@@ -25,7 +26,7 @@ extern {
 }
 
 mod thin;
-mod medium;
+mod hybrid;
 mod fat;
 
 /// Wrapper around the JS debug function that accepts a Rust `&str`.
@@ -70,20 +71,20 @@ pub trait Client<S, SM: ServerMessage<S>> {
 }
 
 type ActiveClient = thin::ThinClient;
-#[cfg(feature="medium")]
-type ActiveClient = medium::MediumClient;
+#[cfg(feature="hybrid")]
+type ActiveClient = hybrid::HybridClientt;
 #[cfg(feature="fat")]
 type ActiveClient = fat::FatClient;
 
 type ActiveClientMessage = ThinClientMessage;
-#[cfg(feature="medium")]
-type ActiveClientMessage = MediumClientMessage;
+#[cfg(feature="hybrid")]
+type ActiveClientMessage = HybridClienttMessage;
 #[cfg(feature="fat")]
 type ActiveClientMessage = FatClientMessage;
 
 type ActiveServerMessage = ThinServerMessage;
-#[cfg(feature="medium")]
-type ActiveServerMessage = MediumServerMessage;
+#[cfg(feature="hybrid")]
+type ActiveServerMessage = HybridServerMessage;
 #[cfg(feature="fat")]
 type ActiveServerMessage = FatServerMessage;
 
@@ -91,8 +92,8 @@ type ActiveServerMessage = FatServerMessage;
 #[no_mangle]
 pub extern "C" fn create_client(universe_size: c_int) -> *mut c_void {
     let client = thin::ThinClient::new(universe_size as usize);
-    #[cfg(feature="medium")]
-    let client = medium::MediumClient::new(universe_size as usize);
+    #[cfg(feature="hybrid")]
+    let client = hybrid::HybridClientt::new(universe_size as usize);
     #[cfg(feature="fat")]
     let client = fat::FatClient::new(universe_size as usize);
     Box::into_raw(Box::new(client)) as *mut c_void
