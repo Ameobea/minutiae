@@ -86,7 +86,7 @@ impl Middleware<
             if entities.len() > 0 {
                 unsafe { ptr::write(dst_ptr, mem::transmute::<[u8; 4], _>([255, 233, 222, 255])) };
             } else {
-                match unsafe { universe.cells.get_unchecked(universe_index) }.state {
+                match OurCellState::Food {
                     OurCellState::Water => unsafe { ptr::write(dst_ptr, mem::transmute::<[u8; 4], _>([0, 0, 0, 255])) },
                     OurCellState::Food => unsafe { ptr::write(dst_ptr, mem::transmute::<[u8; 4], _>([13, 246, 24, 255])) },
                 }

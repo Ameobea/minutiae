@@ -7,3 +7,7 @@ authors = ["Casey Primozic <me@ameo.link>"]
 minutiae-libremote = { path = "../libremote" }
 uuid = { version = "0.5.0", features = ["v4"] }
 clippy = {version = "*", optional = true}
+
+[features]
+meduim = []
+fat = []

@@ -10,6 +10,7 @@ extern crate serde;
 extern crate serde_derive;
 extern crate uuid;
 
+use std::fmt::Debug;
 use std::io::Write;
 use std::cmp::{PartialOrd, Ord, Ordering};
 
@@ -19,10 +20,19 @@ use flate2::write::{DeflateEncoder, DeflateDecoder};
 use uuid::Uuid;
 
 /// A message that is passed over the websocket between the server and a client.
-pub trait Message : PartialEq + Eq + Sized + Send {
-    fn get_seq(&self) -> u32;
+pub trait Message : Debug + PartialEq + Eq + Sized + Send {
     fn serialize(&self) -> Result<Vec<u8>, String>;
     fn deserialize(&[u8]) -> Result<Self, String>;
+}
+
+pub trait ServerMessage<S> : Message + Ord {
+    fn get_seq(&self) -> u32;
+    fn get_snapshot(self) -> Result<S, Self>;
+}
+
+pub trait ClientMessage : Message {
+    fn get_client_id(&self) -> Uuid;
+    fn create_snapshot_request(client_id: Uuid) -> Self;
 }
 
 /// All messages that are passed between the server and clients are of this form.  Each message is accompanied by a sequence
@@ -36,8 +46,6 @@ pub struct ThinServerMessage {
 }
 
 impl Message for ThinServerMessage {
-    fn get_seq(&self) -> u32 { self.seq }
-
     /// Encodes the message in binary format, compressing it in the process.
     fn serialize(&self) -> Result<Vec<u8>, String> {
         // println!("Size of raw binary: {}", serialized_size(self));
@@ -61,6 +69,17 @@ impl Message for ThinServerMessage {
             .map_err(|err| format!("Error deserializing decompressed binary into `ThinServerMessage`: {:?}", err))?;
         deserialize(&decompressed)
             .map_err(|err| format!("Error deserializing decompressed binary into `ThinServerMessage`: {:?}", err))
+    }
+}
+
+impl ServerMessage<Vec<Color>> for ThinServerMessage {
+    fn get_seq(&self) -> u32 { self.seq }
+
+    fn get_snapshot(self) -> Result<Vec<Color>, Self> {
+        match self.contents {
+            ThinServerMessageContents::Snapshot(snap) => Ok(snap),
+            _ => Err(self),
+        }
     }
 }
 
@@ -96,7 +115,6 @@ pub struct Diff {
 /// A message sent from a client to the server
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThinClientMessage {
-    pub seq: u32,
     pub client_id: Uuid,
     pub content: ThinClientMessageContent,
 }
@@ -114,8 +132,6 @@ pub enum ThinClientMessageContent {
 }
 
 impl Message for ThinClientMessage {
-    fn get_seq(&self) -> u32 { self.seq }
-
     /// Given the UUID of the client, wraps the payload into a `ClietMessage` and serializes it
     /// in binary format without compressing it
     fn serialize(&self) -> Result<Vec<u8>, String> {
@@ -126,6 +142,17 @@ impl Message for ThinClientMessage {
     fn deserialize(data: &[u8]) -> Result<Self, String> {
         deserialize(data)
             .map_err(|err| format!("Error deserializing decompressed binary into `ThinClientMessage`: {:?}", err))
+    }
+}
+
+impl ClientMessage for ThinClientMessage {
+    fn get_client_id(&self) -> Uuid { self.client_id }
+
+    fn create_snapshot_request(client_id: Uuid) -> Self {
+        ThinClientMessage {
+            client_id,
+            content: ThinClientMessageContent::SendSnapshot,
+        }
     }
 }
 
@@ -170,7 +197,6 @@ fn server_message_decode(b: &mut test::Bencher) {
 #[test]
 fn clientmessage_serialize_deserialize() {
     let msg = ThinClientMessage{
-        seq: 11111,
         client_id: Uuid::new_v4(),
         content: ThinClientMessageContent::CellAction{action_id: 8u8, universe_index: 999},
     };
