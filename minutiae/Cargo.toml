@@ -10,7 +10,9 @@ license = "MIT"
 
 [dependencies]
 num_cpus = "1.4.0"
-uuid = { version = "0.5.0", features = ["v4"] }
+uuid = { version = "0.5.0", features = ["v4", "serde"] }
+serde = "1.*.*"
+serde_derive = "1.*.*"
 
 [profile.release]
 debug = true

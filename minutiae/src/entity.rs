@@ -7,6 +7,7 @@ use std::clone::Clone;
 use std::fmt::{self, Debug, Formatter};
 use std::marker::PhantomData;
 
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 #[allow(unused_imports)]
@@ -14,10 +15,15 @@ use test;
 
 use cell::CellState;
 
-pub trait EntityState<C: CellState>:Clone {}
+/// The core state of an entity that defines its behavior.  This stat is modified by the engine and is visible by not
+/// writable by the entity itself.
+pub trait EntityState<C: CellState>:Clone + Serialize {}
 
-pub trait MutEntityState:Clone + Default {}
+/// Entity state that is private to the entity.  It is not visible to other entities or to the engine but is mutable
+/// during the entity driver and can be used to hold things such as PRNGs etc.
+pub trait MutEntityState:Clone + Copy + Default + Serialize {}
 
+#[derive(Serialize, Deserialize)]
 pub struct Entity<C: CellState, S: EntityState<C>, M: MutEntityState> {
     pub state: S,
     pub mut_state: RustCell<M>,

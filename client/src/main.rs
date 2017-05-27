@@ -3,12 +3,14 @@
 extern crate uuid;
 extern crate minutiae;
 extern crate minutiae_libremote;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 
 use std::ffi::CString;
 use std::marker::PhantomData;
 use std::mem;
 use std::os::raw::{c_char, c_int, c_void};
-use std::ptr::write;
 use std::slice::from_raw_parts;
 
 use uuid::Uuid;
@@ -93,7 +95,7 @@ type ActiveServerMessage = FatServerMessage;
 pub extern "C" fn create_client(universe_size: c_int) -> *mut c_void {
     let client = thin::ThinClient::new(universe_size as usize);
     #[cfg(feature="hybrid")]
-    let client = hybrid::HybridClientt::new(universe_size as usize);
+    let client = hybrid::HybridClient::new(universe_size as usize);
     #[cfg(feature="fat")]
     let client = fat::FatClient::new(universe_size as usize);
     Box::into_raw(Box::new(client)) as *mut c_void

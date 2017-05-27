@@ -11,20 +11,38 @@ extern crate serde_derive;
 extern crate uuid;
 
 use std::fmt::Debug;
-use std::io::Write;
+use std::io::BufReader;
 use std::cmp::{PartialOrd, Ord, Ordering};
 
 use bincode::{serialize, deserialize, serialize_into, serialized_size, Infinite};
 use flate2::Compression;
-use flate2::write::{DeflateEncoder, DeflateDecoder};
+use flate2::write::DeflateEncoder;
+use flate2::bufread::DeflateDecoder;
 use uuid::Uuid;
 
 /// A message that is passed over the websocket between the server and a client.
-pub trait Message : Debug + PartialEq + Eq + Sized + Send {
+pub trait Message : Sized {
+    /// Given the UUID of the client, wraps the payload into a `ClietMessage` and serializes it
+    /// in binary format without compressing it
     fn serialize(&self) -> Result<Vec<u8>, String>;
-    fn deserialize(&[u8]) -> Result<Self, String>;
+
+    /// Decodes a binary-encoded message.
+    fn deserialize(data: &[u8]) -> Result<Self, String>;
 }
 
+// glue to implement `Message` for everything by default where it's possible
+impl<T> Message for T where T:Debug + PartialEq + Eq + Sized + Send + serde::Serialize, for<'de> T: serde::Deserialize<'de> {
+    fn serialize(&self) -> Result<Vec<u8>, String> {
+        bincode::serialize(self, Infinite).map_err(|_| String::from("Unable to serialize message."))
+    }
+
+    fn deserialize(data: &[u8]) -> Result<Self, String> {
+        bincode::deserialize(data).map_err(|_| String::from("Unable to deserialize message."))
+    }
+}
+
+/// A message transmitted from the server to one or more clients.  Contains a sequence number used to order messages
+/// and determine if any have been missed.
 pub trait ServerMessage<S> : Message + Ord {
     fn get_seq(&self) -> u32;
     fn get_snapshot(self) -> Result<S, Self>;
@@ -34,6 +52,33 @@ pub trait ClientMessage : Message {
     fn get_client_id(&self) -> Uuid;
     fn create_snapshot_request(client_id: Uuid) -> Self;
 }
+
+/// Implements serialization/deserialization for `self` that runs the compressed buffer through deflate compression/
+/// decompression in order to reduce the size of the serialized buffer.
+pub trait CompressedMessage : Sized + Send + PartialEq + serde::Serialize {
+    /// Encodes the message in binary format, compressing it in the process.
+    fn do_serialize(&self) -> Result<Vec<u8>, String> {
+        println!("Size of raw binary: {}", serialized_size(self));
+        let mut compressed = Vec::with_capacity(serialized_size(self) as usize);
+        {
+            let mut encoder = DeflateEncoder::new(&mut compressed, Compression::Fast);
+            serialize_into(&mut encoder, self, Infinite)
+                .map_err(|_| String::from("Error while serializing compressed message."))?;
+            encoder.finish().map_err(|err| format!("Unable to finish the encoder: {:?}", err))?;
+        }
+        // println!("Size of compressed binary: {}", compressed.len());
+        Ok(compressed)
+    }
+
+    /// Decodes and decompresses a binary-encoded message.
+    fn do_deserialize(data: &[u8]) -> Result<Self, String> where for<'de> Self: serde::Deserialize<'de> {
+        let mut decoder = DeflateDecoder::new(BufReader::new(data));
+        bincode::deserialize_from(&mut decoder, Infinite)
+            .map_err(|err| format!("Error deserializing decompressed binary into compressed message: {:?}", err))
+    }
+}
+
+impl<'d, T> CompressedMessage for T where T:Debug + Eq + CompressedMessage, for<'de> Self: serde::Deserialize<'de> {}
 
 /// All messages that are passed between the server and clients are of this form.  Each message is accompanied by a sequence
 /// number that is used to ensure that they're applied in order.  There will never be a case in which sequence numbers are
@@ -45,34 +90,7 @@ pub struct ThinServerMessage {
     pub contents: ThinServerMessageContents,
 }
 
-impl Message for ThinServerMessage {
-    /// Encodes the message in binary format, compressing it in the process.
-    fn serialize(&self) -> Result<Vec<u8>, String> {
-        // println!("Size of raw binary: {}", serialized_size(self));
-        let mut compressed = Vec::with_capacity(serialized_size(self) as usize);
-        {
-            let mut encoder = DeflateEncoder::new(&mut compressed, Compression::Fast);
-            serialize_into(&mut encoder, self, Infinite).map_err(|_| String::from("Error while serializing `ThinServerMessage`."))?;
-            encoder.finish().map_err(|err| format!("Unable to finish the encoder: {:?}", err))?;
-        }
-        // println!("Size of compressed binary: {}", compressed.len());
-        Ok(compressed)
-    }
-
-    /// Decodes and decompresses a binary-encoded message.
-    fn deserialize(data: &[u8]) -> Result<Self, String> {
-        let buf = Vec::with_capacity(data.len());
-        let mut decoder = DeflateDecoder::new(buf);
-        decoder.write_all(data)
-            .map_err(|err| format!("Unable to decompress binary `ThinServerMessage`: {:?}", err))?;
-        let decompressed = decoder.finish()
-            .map_err(|err| format!("Error deserializing decompressed binary into `ThinServerMessage`: {:?}", err))?;
-        deserialize(&decompressed)
-            .map_err(|err| format!("Error deserializing decompressed binary into `ThinServerMessage`: {:?}", err))
-    }
-}
-
-impl ServerMessage<Vec<Color>> for ThinServerMessage {
+impl<'de> ServerMessage<Vec<Color>> for ThinServerMessage {
     fn get_seq(&self) -> u32 { self.seq }
 
     fn get_snapshot(self) -> Result<Vec<Color>, Self> {
@@ -129,20 +147,6 @@ pub enum ThinClientMessageContent {
         action_id: u8,
         universe_index: usize,
     },
-}
-
-impl Message for ThinClientMessage {
-    /// Given the UUID of the client, wraps the payload into a `ClietMessage` and serializes it
-    /// in binary format without compressing it
-    fn serialize(&self) -> Result<Vec<u8>, String> {
-        serialize(self, Infinite).map_err(|err| format!("Unable to serialize `ThinClientMessage`: {:?}", err))
-    }
-
-    /// Decodes a binary-encoded message.
-    fn deserialize(data: &[u8]) -> Result<Self, String> {
-        deserialize(data)
-            .map_err(|err| format!("Error deserializing decompressed binary into `ThinClientMessage`: {:?}", err))
-    }
 }
 
 impl ClientMessage for ThinClientMessage {

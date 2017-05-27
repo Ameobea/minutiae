@@ -15,10 +15,7 @@ use minutiae::entity::{EntityState, MutEntityState};
 use minutiae::action::{CellAction, EntityAction};
 use minutiae::engine::Engine;
 use minutiae::driver::middleware::Middleware;
-use minutiae_libremote::{
-    Message, Color, ThinClientMessage, ThinClientMessageContent, Diff,
-    ThinServerMessage, ThinServerMessageContents
-};
+use minutiae_libremote::*;
 
 pub trait ServerLogic<
     C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>,
@@ -100,7 +97,6 @@ impl<
         self.seq.fetch_add(1, Ordering::Relaxed);
     }
 }
-
 
 pub struct ColorServer<C: CellState, E: EntityState<C>, M: MutEntityState> {
     pub universe_len: usize,

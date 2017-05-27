@@ -61,7 +61,8 @@ pub struct Universe<C: CellState, E: EntityState<C>, M: MutEntityState, CA: Cell
 
 impl<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>> Universe<C, E, M, CA, EA> {
     pub fn new(
-        conf: UniverseConf, gen: &mut Generator<C, E, M, CA, EA>,
+        conf: UniverseConf,
+        gen: &mut Generator<C, E, M, CA, EA>,
         cell_mutator: fn(usize, &[Cell<C>]) -> Option<C>,
         entity_driver: fn(
             universe_index: usize,
@@ -102,6 +103,34 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: 
         }
 
         universe
+    }
+
+    /// Creates a new shell universe without any defined logic designed for use in a hybrid client.
+    pub fn uninitialized(universe_size: usize) -> Self {
+        let dummy_driver = |
+            _: usize,
+            _: &Entity<C, E, M>,
+            _: &EntityContainer<C, E, M>,
+            _: &[Cell<C>],
+            _: &mut FnMut(CA, usize),
+            _: &mut FnMut(SelfAction<C, E, EA>),
+            _: &mut FnMut(EA, usize, Uuid)
+        | {};
+
+        Universe {
+            conf: UniverseConf::default(),
+            cell_mutator: |_: usize, _: &[Cell<C>]| -> Option<C> { None },
+            entity_driver: dummy_driver,
+            seq: 0,
+            cells: Vec::new(),
+            entities: EntityContainer::new(universe_size),
+            average_actions_per_cycle: 0,
+            total_actions: 0,
+            average_unique_entities_modified_per_cycle: 0,
+            total_entity_modifications: 0,
+            __phantom_ca: PhantomData,
+            __phantom_ea: PhantomData,
+        }
     }
 }
 

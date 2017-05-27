@@ -4,11 +4,11 @@ cargo rustc --target=wasm32-unknown-emscripten --release --verbose -- -Z print-l
 
 WASM=`find target/wasm32-unknown-emscripten/release/deps | grep client-.*\.wasm`
 # If binaryen is available locally, use it to further optimize the .wast file emitted from emscripten
-# if hash wasm-opt 2>/dev/null; then
-  # WAST=`find target/wasm32-unknown-emscripten/release/deps | grep client-.*\.wast`
-  # wasm-opt $WAST -O3 --print > opt.wast
-  # wasm-as opt.wast > $WASM
-  # rm opt.wast
-# fi
+if hash wasm-opt 2>/dev/null; then
+	WAST=`find target/wasm32-unknown-emscripten/release/deps | grep client-.*\.wast`
+	wasm-opt $WAST -O3 --print > opt.wast
+	wasm-as opt.wast > $WASM
+	rm opt.wast
+fi
 
 cp $WASM .

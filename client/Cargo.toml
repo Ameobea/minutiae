@@ -8,6 +8,8 @@ minutiae = { path = "../minutiae" }
 minutiae-libremote = { path = "../libremote" }
 uuid = { version = "0.5.0", features = ["v4"] }
 clippy = {version = "*", optional = true}
+serde = "1.*.*"
+serde_derive = "1.*.*"
 
 [features]
 hybrid = []

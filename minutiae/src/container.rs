@@ -11,7 +11,7 @@ use entity::{Entity, EntityState, MutEntityState};
 
 /// For each coordinate on the grid, keeps track of the entities that inhabit it by holding a list of
 /// indexes to slots in the `EntityContainer`.
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EntityPositions(pub Vec<Vec<usize>>);
 
 impl EntityPositions {
@@ -40,6 +40,7 @@ impl IndexMut<usize> for EntityPositions {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum EntitySlot<C: CellState, E: EntityState<C>, M: MutEntityState> {
     Occupied{
         entity: Entity<C, E, M>,
@@ -50,6 +51,7 @@ pub enum EntitySlot<C: CellState, E: EntityState<C>, M: MutEntityState> {
 
 unsafe impl<C: CellState, E: EntityState<C>, M: MutEntityState> Send for EntitySlot<C, E, M> where E:Send, M:Send {}
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EntityContainer<C: CellState, E: EntityState<C>, M: MutEntityState> {
     pub entities: Vec<EntitySlot<C, E, M>>,
     pub empty_index: usize,
