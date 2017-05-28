@@ -4,10 +4,13 @@
 
 extern crate test;
 extern crate num_cpus;
+extern crate uuid;
+
+#[cfg(feature = "serde")]
 extern crate serde;
 #[macro_use]
+#[cfg(feature = "serde")]
 extern crate serde_derive;
-extern crate uuid;
 
 pub mod universe;
 pub mod container;

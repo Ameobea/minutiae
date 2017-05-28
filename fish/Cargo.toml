@@ -9,9 +9,10 @@ minutiae = { path = "../minutiae" }
 minutiae-libremote = { path = "../libremote" }
 clippy = { git = "https://github.com/Manishearth/rust-clippy", optional = true}
 
-pcg = { git = "https://github.com/codahale/pcg.git" }
+pcg = { git = "https://github.com/ameobea/pcg.git" }
 rand = "0.3"
 serde = "1.*.*"
+serde_derive = "1.*.*"
 uuid = { version = "0.5.0", features = ["v4"] }
 ws = "0.7.1"
 
@@ -20,4 +21,4 @@ debug = true
 lto = true
 
 [features]
-default = ["clippy"]
+# default = ["clippy"]

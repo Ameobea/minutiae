@@ -8,6 +8,8 @@ extern crate alloc_system;
 extern crate rand;
 extern crate pcg;
 extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 extern crate test;
 extern crate uuid;
 extern crate ws;
@@ -61,11 +63,11 @@ const FOOD_SPAWN_RADIUS: isize = 40;
 #[cfg(not(target_os = "emscripten"))]
 const UNIVERSE_SIZE: usize = 800;
 #[cfg(not(target_os = "emscripten"))]
-const FISH_COUNT: usize = 28342;
+const FISH_COUNT: usize = 50342;
 #[cfg(not(target_os = "emscripten"))]
-const PREDATOR_COUNT: usize = 0;
+const PREDATOR_COUNT: usize = 3;
 #[cfg(not(target_os = "emscripten"))]
-const VIEW_DISTANCE: usize = 2;
+const VIEW_DISTANCE: usize = 1;
 // there's a one in `this` chance of spawning a food cluster each tick
 #[cfg(not(target_os = "emscripten"))]
 const FOOD_SPAWN_RARITY: usize = 24;
@@ -85,7 +87,7 @@ mod server;
 #[cfg(target_os = "emscripten")]
 use emscripten::{EmscriptenDriver, CanvasRenderer};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 enum OurCellState {
     Water,
     Food,
@@ -104,7 +106,7 @@ impl Display for OurCellState {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 enum OurEntityState {
     Fish {
         food: usize,
@@ -127,6 +129,7 @@ impl Display for OurEntityState {
     }
 }
 
+#[derive(Copy, Serialize)]
 struct OurMutEntityState {
     rng: Option<PcgRng>,
 }
@@ -474,7 +477,7 @@ fn fish_driver(
     // TODO: Implement more intelligent schooling behavior
     // if we're on the same index as another fish and aren't chasing food or running from a predator
     // pick a random direction to move and return.
-    if entities.get_entities_at(source_universe_index).len() > 1 {
+    // if entities.get_entities_at(source_universe_index).len() > 1 {
         let mut mut_state_inner = entity.mut_state.take();
         let (x_offset, y_offset) = {
             let mut rng = mut_state_inner.rng.as_mut().unwrap();
@@ -484,7 +487,7 @@ fn fish_driver(
 
         let self_action = SelfAction::Translate(x_offset, y_offset);
         return self_action_executor(self_action);
-    }
+    // }
 }
 
 fn predator_driver(
@@ -694,7 +697,7 @@ fn main() {
         driver.init(universe, engine, &mut [
             // Box::new(UniverseDisplayer {}),
             // Box::new(Delay(TICK_DELAY_MS)),
-            // Box::new(MinDelay::from_tps(39.97)),
+            Box::new(MinDelay::from_tps(59.97)),
             Box::new(FoodSpawnerMiddleware::new()),
             Box::new(server),
         ]);

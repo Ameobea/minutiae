@@ -1,4 +1,6 @@
 //! Sets up code for communicating changes in universe state with remote clients.
+//!
+//! This should eventually be migrated into the minutiae library itself.
 
 use std::{mem, ptr, thread};
 use std::marker::PhantomData;
