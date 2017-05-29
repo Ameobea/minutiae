@@ -15,7 +15,6 @@ extern crate uuid;
 extern crate ws;
 
 extern crate minutiae;
-extern crate minutiae_libremote;
 
 use std::fmt::{self, Display, Formatter};
 
@@ -38,7 +37,7 @@ use minutiae::generator::Generator;
 use minutiae::util::{calc_offset, get_coords, get_index, iter_visible, manhattan_distance};
 use minutiae::driver::{Driver, BasicDriver};
 use minutiae::driver::middleware::{Middleware, MinDelay};
-use minutiae_libremote::Color;
+use minutiae::server::{self, Color};
 
 // :ok_hand:
 #[cfg(target_os = "emscripten")]
@@ -81,8 +80,6 @@ const FOOD_SPAWN_RADIUS: isize = 35;
 
 #[cfg(target_os = "emscripten")]
 mod emscripten;
-#[cfg(not(target_os = "emscripten"))]
-mod server;
 
 #[cfg(target_os = "emscripten")]
 use emscripten::{EmscriptenDriver, CanvasRenderer};

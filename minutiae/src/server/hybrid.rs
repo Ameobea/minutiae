@@ -9,11 +9,11 @@ use std::marker::PhantomData;
 use serde::{Serialize, Deserialize, Deserializer};
 use uuid::Uuid;
 
-use minutiae::universe::{Universe, UniverseConf};
-use minutiae::cell::{Cell, CellState};
-use minutiae::entity::{Entity, EntityState, MutEntityState};
-use minutiae::action::{CellAction, EntityAction};
-use minutiae::container::{EntityContainer, };
+use universe::{Universe, UniverseConf};
+use cell::{Cell, CellState};
+use entity::{Entity, EntityState, MutEntityState};
+use action::{CellAction, EntityAction};
+use container::{EntityContainer, };
 
 use super::{ServerMessage, ClientMessage};
 

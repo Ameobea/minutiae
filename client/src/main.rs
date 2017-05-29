@@ -2,7 +2,6 @@
 
 extern crate uuid;
 extern crate minutiae;
-extern crate minutiae_libremote;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -14,7 +13,8 @@ use std::os::raw::{c_char, c_int, c_void};
 use std::slice::from_raw_parts;
 
 use uuid::Uuid;
-use minutiae_libremote::*;
+
+use minutiae::server::*;
 
 extern {
     /// Used to initialize the websocket connection and start receiving+processing messages from the server

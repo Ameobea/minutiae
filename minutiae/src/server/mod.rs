@@ -1,32 +1,39 @@
-//! Minutiae libremote.  See README.md for additional information.
+//! Sets up code for communicating changes in universe state with remote clients.
 
-#![feature(test)]
-
-extern crate test;
-extern crate bincode;
-extern crate flate2;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate uuid;
-extern crate minutiae;
-
+use std::{mem, ptr, thread};
+use std::marker::PhantomData;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, RwLock};
 use std::fmt::Debug;
 use std::io::BufReader;
-use std::cmp::{PartialOrd, Ord, Ordering};
+use std::cmp::{PartialOrd, Ord, Ordering as CmpOrdering};
 
-use bincode::{serialize, deserialize, serialize_into, serialized_size, Infinite};
+use bincode::{self, serialize, deserialize, serialize_into, serialized_size, Infinite};
 use flate2::Compression;
 use flate2::write::DeflateEncoder;
 use flate2::bufread::DeflateDecoder;
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
+use universe::Universe;
+use container::EntityContainer;
+use cell::{Cell, CellState};
+use entity::{EntityState, MutEntityState};
+use action::{CellAction, EntityAction};
+use engine::Engine;
+use driver::middleware::Middleware;
+
+#[cfg(feature = "server")]
+mod server;
+#[cfg(feature = "server")]
+pub use self::server::*;
+
 mod thin;
-pub use thin::*;
+pub use self::thin::*;
 mod hybrid;
-pub use hybrid::*;
+pub use self::hybrid::*;
 mod fat;
-pub use fat::*;
+pub use self::fat::*;
 
 /// A message that is passed over the websocket between the server and a client.
 pub trait Message : Sized {
@@ -39,7 +46,7 @@ pub trait Message : Sized {
 }
 
 // glue to implement `Message` for everything by default where it's possible
-impl<T> Message for T where T:Debug + PartialEq + Eq + Sized + Send + serde::Serialize, for<'de> T: serde::Deserialize<'de> {
+impl<T> Message for T where T:Debug + PartialEq + Eq + Sized + Send + Serialize, for<'de> T: Deserialize<'de> {
     fn serialize(&self) -> Result<Vec<u8>, String> {
         bincode::serialize(self, Infinite).map_err(|_| String::from("Unable to serialize message."))
     }
@@ -63,7 +70,7 @@ pub trait ClientMessage : Message {
 
 /// Implements serialization/deserialization for `self` that runs the compressed buffer through deflate compression/
 /// decompression in order to reduce the size of the serialized buffer.
-pub trait CompressedMessage : Sized + Send + PartialEq + serde::Serialize {
+pub trait CompressedMessage : Sized + Send + PartialEq + Serialize {
     /// Encodes the message in binary format, compressing it in the process.
     fn do_serialize(&self) -> Result<Vec<u8>, String> {
         println!("Size of raw binary: {}", serialized_size(self));
@@ -79,14 +86,14 @@ pub trait CompressedMessage : Sized + Send + PartialEq + serde::Serialize {
     }
 
     /// Decodes and decompresses a binary-encoded message.
-    fn do_deserialize(data: &[u8]) -> Result<Self, String> where for<'de> Self: serde::Deserialize<'de> {
+    fn do_deserialize(data: &[u8]) -> Result<Self, String> where for<'de> Self: Deserialize<'de> {
         let mut decoder = DeflateDecoder::new(BufReader::new(data));
         bincode::deserialize_from(&mut decoder, Infinite)
             .map_err(|err| format!("Error deserializing decompressed binary into compressed message: {:?}", err))
     }
 }
 
-impl<'d, T> CompressedMessage for T where T:Debug + Eq + CompressedMessage, for<'de> Self: serde::Deserialize<'de> {}
+impl<'d, T> CompressedMessage for T where T:Debug + Eq + CompressedMessage, for<'de> Self: Deserialize<'de> {}
 
 #[bench]
 /// Tests the process of encoding a server message as binary and compressing it.

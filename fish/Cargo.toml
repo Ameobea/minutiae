@@ -4,9 +4,8 @@ version = "0.1.0"
 authors = ["Casey Primozic <me@ameo.link>"]
 
 [dependencies]
-# minutiae = "0.3.0"
-minutiae = { path = "../minutiae" }
-minutiae-libremote = { path = "../libremote" }
+minutiae = { version = "0.4.0", features = ["server"] }
+# minutiae = { path = "../minutiae", features = ["server"] }
 clippy = { git = "https://github.com/Manishearth/rust-clippy", optional = true}
 
 pcg = { git = "https://github.com/ameobea/pcg.git" }

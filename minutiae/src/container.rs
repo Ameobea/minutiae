@@ -11,12 +11,8 @@ use entity::{Entity, EntityState, MutEntityState};
 
 /// For each coordinate on the grid, keeps track of the entities that inhabit it by holding a list of
 /// indexes to slots in the `EntityContainer`.
-#[cfg(feature = "serde")]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EntityPositions(pub Vec<Vec<usize>>);
-
-#[cfg(not(feature = "serde"))]
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct EntityPositions(pub Vec<Vec<usize>>);
 
 impl EntityPositions {
@@ -45,18 +41,10 @@ impl IndexMut<usize> for EntityPositions {
     }
 }
 
-#[cfg(feature = "serde")]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum EntitySlot<C: CellState, E: EntityState<C>, M: MutEntityState> {
-    Occupied{
-        entity: Entity<C, E, M>,
-        universe_index: usize
-    },
-    Empty(usize),
-}
-
-#[cfg(not(feature = "serde"))]
+/// Either holds an entity or a 'pointer' (in the form of an array index) of the next empty slot in the data structure.
+/// This functions somewhat similarly to a linked list.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum EntitySlot<C: CellState, E: EntityState<C>, M: MutEntityState> {
     Occupied{
         entity: Entity<C, E, M>,
@@ -67,16 +55,14 @@ pub enum EntitySlot<C: CellState, E: EntityState<C>, M: MutEntityState> {
 
 unsafe impl<C: CellState, E: EntityState<C>, M: MutEntityState> Send for EntitySlot<C, E, M> where E:Send, M:Send {}
 
-#[cfg(feature = "serde")]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EntityContainer<C: CellState, E: EntityState<C>, M: MutEntityState> {
-    pub entities: Vec<EntitySlot<C, E, M>>,
-    pub empty_index: usize,
-    pub positions: EntityPositions
-}
-
-#[cfg(not(feature = "serde"))]
+/// Data structure holding all of the universe's entities.  The entities and their state are held in a vector of
+/// `EntitySlot`s, each of which either holds an entity or the index of the next empty slot.  Using this method, it's
+/// possible to add/remove entities from anywhere in the container without causing any allocations.
+///
+/// A second internal structure is used to map universe indexes to entity indexes; it holds the entity indexes of all
+/// entities that reside in each universe index.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct EntityContainer<C: CellState, E: EntityState<C>, M: MutEntityState> {
     pub entities: Vec<EntitySlot<C, E, M>>,
     pub empty_index: usize,

@@ -13,8 +13,8 @@ use minutiae::universe::{Universe, UniverseConf};
 use minutiae::cell::{Cell, CellState};
 use minutiae::entity::{Entity, EntityState, MutEntityState};
 use minutiae::action::{CellAction, EntityAction};
-use minutiae::container::{EntityContainer, };
-use minutiae_libremote::*;
+use minutiae::container::EntityContainer;
+use minutiae::server::*;
 
 use super::{Client, ClientState};
 

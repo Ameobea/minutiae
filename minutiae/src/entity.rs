@@ -32,16 +32,7 @@ pub trait MutEntityState:Clone + Copy + Default + Serialize {}
 #[cfg(not(feature = "serde"))]
 pub trait MutEntityState:Clone + Default {}
 
-#[cfg(feature = "serde")]
-#[derive(Serialize, Deserialize)]
-pub struct Entity<C: CellState, S: EntityState<C>, M: MutEntityState> {
-    pub state: S,
-    pub mut_state: RustCell<M>,
-    pub uuid: Uuid,
-    phantom: PhantomData<C>,
-}
-
-#[cfg(not(feature = "serde"))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Entity<C: CellState, S: EntityState<C>, M: MutEntityState> {
     pub state: S,
     pub mut_state: RustCell<M>,

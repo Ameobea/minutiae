@@ -1,6 +1,6 @@
 [package]
 name = "minutiae"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Casey Primozic <me@ameo.link>"]
 description = "Cellular Automata-esque simulation engine involving a 2D universe populated by cells and entities"
 repository = "https://github.com/Ameobea/minutiae"
@@ -9,10 +9,18 @@ keywords = ["simulation", "automata", "engine", "entity"]
 license = "MIT"
 
 [dependencies]
+bincode = { version = "0.8.0", optional = true }
+flate2 = { version = "0.2.19", features = ["zlib"], default-features = false, optional = true }
 num_cpus = "1.4.0"
 uuid = { version = "0.5.0", features = ["v4", "serde"] }
 serde = { version = "1.*.*", optional = true }
-serde_derive = "1.*.*"
+serde_derive = { version = "1.*.*", optional = true }
+ws = { version = "0.7.1", optional = true }
+
+[features]
+server = ["ws", "serde_support", "bincode", "flate2"]
+client = ["serde_support", "bincode", "flate2"]
+serde_support = ["serde", "serde_derive"]
 
 [profile.release]
 debug = true

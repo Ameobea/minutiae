@@ -6,7 +6,7 @@ use std::ptr;
 
 use uuid::Uuid;
 
-use minutiae_libremote::*;
+use minutiae::server::*;
 use super::{Client, ClientState, debug};
 
 pub struct ThinClient {

@@ -1,23 +1,31 @@
-//! Sets up code for communicating changes in universe state with remote clients.
-//!
-//! This should eventually be migrated into the minutiae library itself.
+//! Defines the logic for the websocket server.  This server is responsible for managinc the connections to all of the
+//! clients and passing messages to them.
 
 use std::{mem, ptr, thread};
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
+use std::fmt::Debug;
+use std::io::BufReader;
+use std::cmp::{PartialOrd, Ord, Ordering as CmpOrdering};
 
+use bincode::{self, serialize, deserialize, serialize_into, serialized_size, Infinite};
+use flate2::Compression;
+use flate2::write::DeflateEncoder;
+use flate2::bufread::DeflateDecoder;
 use serde::{Serialize, Deserialize};
+use uuid::Uuid;
 use ws::{self, WebSocket, Handler};
 
-use minutiae::universe::Universe;
-use minutiae::container::EntityContainer;
-use minutiae::cell::{Cell, CellState};
-use minutiae::entity::{EntityState, MutEntityState};
-use minutiae::action::{CellAction, EntityAction};
-use minutiae::engine::Engine;
-use minutiae::driver::middleware::Middleware;
-use minutiae_libremote::*;
+use universe::Universe;
+use container::EntityContainer;
+use cell::{Cell, CellState};
+use entity::{EntityState, MutEntityState};
+use action::{CellAction, EntityAction};
+use engine::Engine;
+use driver::middleware::Middleware;
+
+use super::*;
 
 pub trait ServerLogic<
     C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>,
