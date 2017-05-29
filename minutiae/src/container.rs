@@ -4,6 +4,9 @@ use std::mem;
 use std::ops::{Index, IndexMut};
 use std::usize;
 
+#[cfg(feature = "serde")]
+use serde::Deserialize;
+
 use uuid::Uuid;
 
 use cell::CellState;
@@ -45,6 +48,7 @@ impl IndexMut<usize> for EntityPositions {
 /// This functions somewhat similarly to a linked list.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(bound = "C: for<'d> Deserialize<'d>"))]
 pub enum EntitySlot<C: CellState, E: EntityState<C>, M: MutEntityState> {
     Occupied{
         entity: Entity<C, E, M>,
@@ -63,6 +67,7 @@ unsafe impl<C: CellState, E: EntityState<C>, M: MutEntityState> Send for EntityS
 /// entities that reside in each universe index.
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(bound = "C: for<'d> Deserialize<'d>"))]
 pub struct EntityContainer<C: CellState, E: EntityState<C>, M: MutEntityState> {
     pub entities: Vec<EntitySlot<C, E, M>>,
     pub empty_index: usize,

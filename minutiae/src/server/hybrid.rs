@@ -20,9 +20,10 @@ use super::{ServerMessage, ClientMessage};
 /// Helper trait to contain some of the massive spam caused in trait definitions.  This requires that implementors are
 pub trait HybParam : Send + Serialize + for<'de> Deserialize<'de> {}
 
-pub type HybridServerSnapshot<C: CellState, E: EntityState<C>, M: MutEntityState> = (Vec<C>, EntityContainer<C, E, M>);
+pub type HybridServerSnapshot<C: CellState, E: EntityState<C>, M: MutEntityState> = (Vec<Cell<C>>, EntityContainer<C, E, M>);
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(bound = "C: for<'d> Deserialize<'d>")]
 pub enum HybridServerMessageContents<
     C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
     CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA>
@@ -58,7 +59,8 @@ impl ClientMessage for HybridClientMessage {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(bound = "C: for<'d> Deserialize<'d>")]
 pub struct HybridServerMessage<
     C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
     CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam
@@ -71,17 +73,6 @@ pub struct HybridServerMessage<
     __phantom_ca: PhantomData<CA>,
     __phantom_ea: PhantomData<EA>,
     __phantom_v: PhantomData<V>,
-}
-
-impl<
-    'de, C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam
-> Deserialize<'de> for HybridServerMessage<C, E, M, CA, EA, V> {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where D: Deserializer<'de>
-    {
-        unimplemented!();
-    }
 }
 
 impl<
@@ -142,6 +133,8 @@ impl<
 
 /// Defines an event that takes place in the universe.  Given the event, the hybrid client must be able to
 /// apply it to the universe.
-pub trait Event<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>> {
+pub trait Event<
+    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>
+> : Serialize + for<'u> Deserialize<'u> {
     fn apply(&self, universe: &mut Universe<C, E, M, CA, EA>);
 }

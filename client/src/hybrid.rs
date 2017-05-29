@@ -2,18 +2,10 @@
 //! This is useful for simulations that have highly abstractable actions that affect multiple pixels.  It requires that
 //! the client maintains a full copy of the universe's state including cell and entity states.
 
-use std::cmp::{Ord, Ordering};
-use std::fmt::{self, Debug, Formatter};
-use std::marker::PhantomData;
-
-use serde::{Serialize, Deserialize, Deserializer};
-use uuid::Uuid;
-
-use minutiae::universe::{Universe, UniverseConf};
-use minutiae::cell::{Cell, CellState};
-use minutiae::entity::{Entity, EntityState, MutEntityState};
+use minutiae::universe::Universe;
+use minutiae::cell::CellState;
+use minutiae::entity::{EntityState, MutEntityState};
 use minutiae::action::{CellAction, EntityAction};
-use minutiae::container::EntityContainer;
 use minutiae::server::*;
 
 use super::{Client, ClientState};
@@ -42,12 +34,8 @@ impl<
 
     fn apply_snap(&mut self, snap: HybridServerSnapshot<C, E, M>) {
         let (cells, entities) = snap;
-        unimplemented!(); // TODO
-        // self.universe.cells = cells
-        //     .into_iter()
-        //     .map(|state| Cell {state: state})
-        //     .collect();
-        // self.universe.entities = entities.into_entity_container();
+        self.universe.cells = cells;
+        self.universe.entities = entities;
     }
 
     fn get_pixbuf_ptr(&self) -> *const u8 {

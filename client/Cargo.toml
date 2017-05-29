@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Casey Primozic <me@ameo.link>"]
 
 [dependencies]
-minutiae = { path = "../minutiae", features = ["client"] }
+minutiae = { version = "0.4.0", path = "../minutiae", features = ["client"] }
 uuid = { version = "0.5.0", features = ["v4"] }
 clippy = {version = "*", optional = true}
 serde = "1.*.*"
