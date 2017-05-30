@@ -38,6 +38,8 @@ use minutiae::util::{calc_offset, get_coords, get_index, iter_visible, manhattan
 use minutiae::driver::{Driver, BasicDriver};
 use minutiae::driver::middleware::{Middleware, MinDelay};
 use minutiae::server::{self, Color};
+#[cfg(target_os = "emscripten")]
+use minutiae::emscripten::{EmscriptenDriver, CanvasRenderer};
 
 // :ok_hand:
 #[cfg(target_os = "emscripten")]
@@ -77,12 +79,6 @@ const FOOD_SPAWN_COUNT: usize = 2226;
 const FOOD_SPAWN_RADIUS: isize = 35;
 
 // const SCHOOL_SPACING: usize = 2;
-
-#[cfg(target_os = "emscripten")]
-mod emscripten;
-
-#[cfg(target_os = "emscripten")]
-use emscripten::{EmscriptenDriver, CanvasRenderer};
 
 #[derive(Clone, Debug, Serialize)]
 enum OurCellState {

@@ -33,3 +33,19 @@ pub mod util;
 pub mod driver;
 #[cfg(any(feature = "server", feature = "client"))]
 pub mod server;
+// #[cfg(target_os = "emscripten")]
+pub mod emscripten;
+
+
+pub mod prelude {
+    //! Utility module for re-exporting some commonly used traits
+    pub use universe::{Universe, UniverseConf};
+    pub use entity::{Entity, EntityState, MutEntityState};
+    pub use cell::{Cell, CellState};
+    pub use action::{Action, CellAction, SelfAction, EntityAction, OwnedAction};
+    pub use generator::Generator;
+    pub use engine::Engine;
+    pub use driver::Driver;
+    pub use driver::middleware::Middleware;
+    pub use container::EntityContainer;
+}
