@@ -19,15 +19,25 @@ const UNIVERSE_SIZE: usize = 800;
 
 #[derive(Clone)]
 struct Pheremones {
-    searching: u16,
-    found: u16,
+    searching: u16, // Indicates that an ant was on this while searching for food
+    found: u16, // Indicates that an ant was walking on this square while carrying food
+}
+
+impl Pheremones {
+    pub fn new() -> Self {
+        Pheremones {
+            searching: 0,
+            found: 0,
+        }
+    }
 }
 
 #[derive(Clone)]
 enum CellContents {
     Empty,
     Filled(u8),
-    Food,
+    Food(u16),
+    Anthill,
 }
 
 #[derive(Clone)]
@@ -39,7 +49,16 @@ struct CS {
 impl CellState for CS {}
 
 #[derive(Clone)]
-struct ES {}
+enum AntState {
+    Wandering, // Ant is currently searching the world for food
+    FollowingTrailToFood, // Ant is following a trail that it thinks leads to food
+    ReturningWithFood, // Ant is carrying food and attempting to bring it back to the anthill
+}
+
+#[derive(Clone)]
+enum ES {
+    Ant(AntState)
+}
 
 impl EntityState<CS> for ES {}
 
@@ -56,7 +75,9 @@ struct CA;
 
 impl CellAction<CS> for CA {}
 
-struct EA;
+enum EA {
+    EatFood(usize)
+}
 
 impl EntityAction<CS, ES> for EA {}
 
@@ -64,6 +85,10 @@ struct WorldGenerator;
 
 impl Generator<CS, ES, MES, CA, EA> for WorldGenerator {
     fn gen(&mut self, conf: &UniverseConf) -> (Vec<Cell<CS>>, Vec<Vec<Entity<CS, ES, MES>>>) {
+        let cells = vec![CS {pheremones: Pheremones::new(), contents: CellContents::Empty}];
+        // TODO: Spawn food deposits in the world
+        // TODO: Add an anthill into the world
+        // TODO: Spawn ants on the anthill square to start off
         unimplemented!(); // TODO
     }
 }
