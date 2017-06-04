@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use cell::CellState;
-    use entity::{Entity, EntityState, MutEntityState};
+use entity::{Entity, EntityState, MutEntityState};
 
 /// Given an index of the universe and the universe's size returns X and Y coordinates.
 pub fn get_coords(index: usize, universe_size: usize) -> (usize, usize) {
@@ -129,6 +129,10 @@ pub fn iter_visible(cur_x: usize, cur_y: usize, view_distance: usize, universe_s
         first: true,
     }
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Color(pub [u8; 3]);
 
 #[test]
 fn iter_visible_functionality() {

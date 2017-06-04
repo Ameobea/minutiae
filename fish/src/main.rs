@@ -12,7 +12,6 @@ extern crate serde;
 extern crate serde_derive;
 extern crate test;
 extern crate uuid;
-extern crate ws;
 
 extern crate minutiae;
 
@@ -32,14 +31,19 @@ use minutiae::engine::Engine;
 use minutiae::engine::parallel::ParallelEngine;
 #[cfg(target_os = "emscripten")]
 use minutiae::engine::serial::SerialEngine;
-use minutiae::engine::iterator::{SerialGridIterator};
+use minutiae::engine::iterator::SerialGridIterator;
+#[cfg(target_os = "emscripten")]
+use minutiae::engine::iterator::SerialEntityIterator;
 use minutiae::generator::Generator;
-use minutiae::util::{calc_offset, get_coords, get_index, iter_visible, manhattan_distance};
+use minutiae::util::{calc_offset, get_coords, get_index, iter_visible, manhattan_distance, Color};
 use minutiae::driver::{Driver, BasicDriver};
 use minutiae::driver::middleware::{Middleware, MinDelay};
-use minutiae::server::{self, Color};
 #[cfg(target_os = "emscripten")]
 use minutiae::emscripten::{EmscriptenDriver, CanvasRenderer};
+
+extern {
+    pub fn canvas_render(bufptr: *const u8);
+}
 
 mod engine;
 use engine::*;
@@ -290,14 +294,37 @@ fn main() {
 
     #[cfg(target_os = "emscripten")]
     {
+        fn calc_color(
+            cell: &Cell<OurCellState>,
+            entity_indexes: &[usize],
+            entity_container: &EntityContainer<OurCellState, OurEntityState, OurMutEntityState>
+        ) -> [u8; 4] {
+            if !entity_indexes.is_empty() {
+                for i in entity_indexes {
+                    if let OurEntityState::Predator{..} = *unsafe { &entity_container.get(*i).state } {
+                        return [233, 121, 78, 255];
+                    }
+                }
+                [12, 24, 222, 255]
+            } else {
+                match cell.state {
+                    OurCellState::Water => [0, 0, 0, 255],
+                    OurCellState::Food => [12, 231, 2, 255],
+                }
+            }
+        }
+
         EmscriptenDriver.init(universe, engine, &mut [
             Box::new(FoodSpawnerMiddleware::new()),
-            Box::new(CanvasRenderer::new()),
+            Box::new(CanvasRenderer::new(UNIVERSE_SIZE, calc_color, canvas_render)),
         ]);
     }
 
     #[cfg(not(target_os = "emscripten"))]
     {
+        use minutiae::server::{self, Color};
+        use minutiae::server::thin::*;
+
         fn calc_color(
             cell: &Cell<OurCellState>,
             entity_indexes: &[usize],
@@ -320,14 +347,14 @@ fn main() {
 
         let server_logic = server::ColorServer::new(UNIVERSE_SIZE, calc_color);
         let seq = server_logic.seq.clone();
-        let server = server::Server::new(UNIVERSE_SIZE, "0.0.0.0:7037", server_logic, seq);
+        let server = Box::new(server::thin::ColorServer::new(UNIVERSE_SIZE, "0.0.0.0:7037", server_logic, seq));
         let driver = BasicDriver;
         driver.init(universe, engine, &mut [
             // Box::new(UniverseDisplayer {}),
             // Box::new(Delay(TICK_DELAY_MS)),
             Box::new(MinDelay::from_tps(59.97)),
             Box::new(FoodSpawnerMiddleware::new()),
-            Box::new(server),
+            server,
         ]);
     }
 }

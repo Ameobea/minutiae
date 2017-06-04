@@ -64,6 +64,28 @@ struct CS {
 impl CellState for CS {}
 
 #[derive(Clone)]
+struct Ant {
+    state: AntState,
+    held_food: usize,
+}
+
+impl<'a> From<&'a ES> for Option<&'a Ant> {
+    fn from(entity_state: &'a ES) -> Self {
+        match entity_state {
+            &ES::Ant(ref ant) => Some(ant),
+        }
+    }
+}
+
+impl<'a> From<&'a mut ES> for Option<&'a mut Ant> {
+    fn from(entity_state: &'a mut ES) -> Self {
+        match entity_state {
+            &mut ES::Ant(ref mut ant) => Some(ant),
+        }
+    }
+}
+
+#[derive(Clone)]
 enum AntState {
     Wandering, // Ant is currently searching the world for food
     FollowingTrailToFood, // Ant is following a trail that it thinks leads to food
@@ -72,16 +94,13 @@ enum AntState {
 
 #[derive(Clone)]
 enum ES {
-    Ant {
-        state: AntState,
-        held_food: usize,
-    }
+    Ant(Ant),
 }
 
 impl EntityState<CS> for ES {}
 
 impl ES {
-    pub fn new_ant() -> Entity<CS, Self, MES> { Entity::new(ES::Ant {state: AntState::Wandering, held_food: 0}, MES::default()) }
+    pub fn new_ant() -> Entity<CS, Self, MES> { Entity::new(ES::Ant(Ant {state: AntState::Wandering, held_food: 0}), MES::default()) }
 }
 
 #[derive(Clone, Default)]
@@ -184,19 +203,19 @@ fn entity_driver(
     self_action_executor: &mut FnMut(SelfAction<CS, ES, EA>),
     entity_action_executor: &mut FnMut(EA, usize, Uuid)
 ) {
-    match entity.state {
-        ES::Ant{ref state, ..} => match state {
-            &AntState::Wandering => {
+    match &entity.state {
+        &ES::Ant(ref ant) => match ant.state {
+            AntState::Wandering => {
                 // lay some pheremone on the current location to indicate that we walked here while searching for food
                 cell_action_executor(CA::LaySearchPheremone, universe_index);
                 // TODO: Wander
                 unimplemented!(); // TODO
             },
-            &AntState::FollowingTrailToFood => {
+            AntState::FollowingTrailToFood => {
                 // TODO: Follow trail to the food
                 unimplemented!(); // TODO
             },
-            &AntState::ReturningWithFood => {
+            AntState::ReturningWithFood => {
                 // lay some pheremone on the current location to indicate that we walked here while returning food to the nest
                 cell_action_executor(CA::LayFoundPheremone, universe_index);
                 // TODO: Follow the trail back to the nest
@@ -244,12 +263,15 @@ fn exec_cell_action(owned_action: &OwnedAction<CS, ES, CA, EA>, cells: &mut [Cel
                             }
 
                             // increment the ant's held food count
-                            match entity.state {
-                                ES::Ant {ref state, ref mut held_food} => {
-                                    if *held_food < ANT_FOOD_CAPACITY {
-                                        *held_food += 1
+                            match (&mut entity.state).into() {
+                                Some(&mut Ant {ref mut state, ref mut held_food}) => {
+                                    *held_food += 1;
+                                    // once we're carrying as much food as we can, bring it back to the nest.
+                                    if *held_food == ANT_FOOD_CAPACITY {
+                                        *state = AntState::ReturningWithFood;
                                     }
-                                }
+                                },
+                                None => (), // we're not even an ant at all!
                             }
                         },
                     }

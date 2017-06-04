@@ -72,7 +72,7 @@ impl<
 /// `canvas_render` function with a pointer to that internal pixeldata buffer in rgba format (the same format
 /// as is accepted by HTML Canvases).
 pub struct CanvasRenderer<C: CellState, E: EntityState<C>, M: MutEntityState> {
-    pixbuf: Vec<[u8; 4]>,
+    pixbuf: Vec<u8>,
     get_color: ColorCalculator<C, E, M>,
     canvas_render: unsafe extern fn(ptr: *const u8),
 }
@@ -86,13 +86,18 @@ impl<
             let entities = universe.entities.get_entities_at(universe_index);
 
             let dst_ptr = unsafe { self.pixbuf.as_ptr().offset(universe_index as isize * 4) } as *mut u32;
-            unsafe { ptr::write(dst_ptr, mem::transmute::<[u8; 4], _>(
-                (self.get_color)(&universe.cells.get_unchecked(universe_index), entities, &universe.entities)
-            )) };
+            unsafe {
+                ptr::write(
+                    dst_ptr,
+                    mem::transmute::<[u8; 4], _>(
+                        (self.get_color)(&universe.cells.get_unchecked(universe_index), entities, &universe.entities)
+                    )
+                )
+            };
         }
 
         // pass a pointer to our internal buffer to the canvas render function
-        unsafe { (self.canvas_render)(self.pixbuf.as_ptr() as *const u8) }
+        unsafe { (self.canvas_render)(self.pixbuf.as_ptr()) }
     }
 }
 
@@ -101,7 +106,7 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> CanvasRenderer<C, E, M>
         universe_size: usize, get_color: ColorCalculator<C, E, M>, canvas_render: unsafe extern fn(ptr: *const u8)
     ) -> Self {
         CanvasRenderer {
-            pixbuf: vec![[255u8; 4]; universe_size * universe_size],
+            pixbuf: vec![255u8; universe_size * universe_size * 4],
             get_color,
             canvas_render,
         }

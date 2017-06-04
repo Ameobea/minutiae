@@ -4,8 +4,9 @@ version = "0.1.0"
 authors = ["Casey Primozic <me@ameo.link>"]
 
 [dependencies]
-minutiae = { version = "0.4.0", features = ["server"] }
+# minutiae = { version = "0.4.0", features = ["server"] }
 # minutiae = { path = "../minutiae", features = ["server"] }
+minutiae = { path = "../minutiae" }
 clippy = { git = "https://github.com/Manishearth/rust-clippy", optional = true}
 
 pcg = { git = "https://github.com/ameobea/pcg.git" }
@@ -13,10 +14,9 @@ rand = "0.3"
 serde = "1.*.*"
 serde_derive = "1.*.*"
 uuid = { version = "0.5.0", features = ["v4"] }
-ws = "0.7.1"
 
 [profile.release]
-debug = true
+# debug = true
 lto = true
 
 [features]
