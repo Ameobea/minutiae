@@ -1,21 +1,35 @@
 //! Small ant colony simulation with pheremone trails and simulated foraging behavior.
 
+// temp during development
+#![allow(dead_code, unused_variables)]
+
 extern crate minutiae;
+extern crate pcg;
+extern crate rand;
 extern crate uuid;
 
+use std::cell::Cell as RustCell;
+use std::marker::PhantomData;
+
+use pcg::PcgRng;
+use uuid::Uuid;
+use rand::{Rng, SeedableRng};
 use minutiae::prelude::*;
 use minutiae::engine::serial::SerialEngine;
 use minutiae::engine::iterator::{SerialGridIterator, SerialEntityIterator};
-use minutiae::driver::BasicDriver;
 use minutiae::driver::middleware::MinDelay;
 use minutiae::emscripten::{EmscriptenDriver, CanvasRenderer};
-use uuid::Uuid;
 
 extern {
     pub fn canvas_render(pixbuf_ptr: *const u8);
 }
 
 const UNIVERSE_SIZE: usize = 800;
+const ANT_COUNT: usize = 17;
+const FOOD_RARITY: u8 = 50;
+const PRNG_SEED: [u64; 2] = [198918237842, 9];
+
+const UNIVERSE_LENGTH: usize = UNIVERSE_SIZE * UNIVERSE_SIZE;
 
 #[derive(Clone)]
 struct Pheremones {
@@ -62,6 +76,10 @@ enum ES {
 
 impl EntityState<CS> for ES {}
 
+impl ES {
+    pub fn new_ant() -> Entity<CS, Self, MES> { Entity::new(ES::Ant(AntState::Wandering), MES::default()) }
+}
+
 #[derive(Clone, Default)]
 struct MES {}
 
@@ -85,9 +103,29 @@ struct WorldGenerator;
 
 impl Generator<CS, ES, MES, CA, EA> for WorldGenerator {
     fn gen(&mut self, conf: &UniverseConf) -> (Vec<Cell<CS>>, Vec<Vec<Entity<CS, ES, MES>>>) {
-        let cells = vec![CS {pheremones: Pheremones::new(), contents: CellContents::Empty}];
+        let mut rng = PcgRng::from_seed(PRNG_SEED);
+        let mut cells = vec![Cell{state: CS {pheremones: Pheremones::new(), contents: CellContents::Empty}}; UNIVERSE_LENGTH];
+        let mut entities = vec![Vec::new(); UNIVERSE_LENGTH];
         // TODO: Spawn food deposits in the world
-        // TODO: Add an anthill into the world
+        // Pick location of anthill and spawn ants around it
+        let anthill_index = rng.gen_range(0, UNIVERSE_LENGTH);
+        cells[anthill_index].state.contents = CellContents::Anthill;
+        let (hill_x, hill_y) = get_coords(anthill_index, UNIVERSE_SIZE);
+        let min_x = if hill_x > 3 { hill_x - 3 } else { 0 };
+        let max_x = if hill_x + 4 <= UNIVERSE_SIZE { hill_x + 3 } else { UNIVERSE_SIZE };
+        let min_y = if hill_y > 3 { hill_y - 3 } else { 0 };
+        let max_y = if hill_y + 4 <= UNIVERSE_SIZE { hill_y + 3 } else { UNIVERSE_SIZE };
+        let mut spawned_ants = 0;
+        // spawn ants close to the anthill to start off
+        while spawned_ants < ANT_COUNT {
+            let x = rng.gen_range(min_x, max_x);
+            let y = rng.gen_range(min_y, max_y);
+            let index = get_index(x, y, UNIVERSE_SIZE);
+            if entities[index].len() == 0 {
+                entities[index].push(ES::new_ant());
+                spawned_ants += 1;
+            }
+        }
         // TODO: Spawn ants on the anthill square to start off
         unimplemented!(); // TODO
     }
@@ -148,6 +186,7 @@ fn get_color(cell: &Cell<CS>, entity_indexes: &[usize], entity_container: &Entit
 }
 
 fn main() {
+    assert!(FOOD_RARITY < 101);
     let conf = UniverseConf {
         iter_cells: false,
         size: 800,

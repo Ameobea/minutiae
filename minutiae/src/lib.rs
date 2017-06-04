@@ -48,4 +48,5 @@ pub mod prelude {
     pub use driver::Driver;
     pub use driver::middleware::Middleware;
     pub use container::EntityContainer;
+    pub use util::*;
 }

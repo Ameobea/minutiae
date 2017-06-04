@@ -109,8 +109,7 @@ pub unsafe extern "C" fn get_buffer_ptr(client: *const ActiveClient) -> *const u
 
 #[no_mangle]
 pub extern "C" fn process_message(client: *mut ActiveClient, message_ptr: *const u8, message_len: c_int) {
-    debug(&format!("Received message of size {} from server.", message_len));
-    // debug(&format!("Processing message of length {} bytes...", message_len));
+    // debug(&format!("Received message of size {} from server.", message_len));
     let mut client: &mut ActiveClient = unsafe { &mut *client };
     // construct a slice from the raw data
     let slice: &[u8] = unsafe { from_raw_parts(message_ptr, message_len as usize) };
@@ -181,7 +180,7 @@ fn handle_message(client: &mut ActiveClient, message: ActiveServerMessage) {
             client.get_state().pending_shapshot = true;
         }
     } else if seq == client.get_state().last_seq {
-        debug(&format!("Received duplicate message with sequence number {}: {:?}", seq, message));
+        debug(&format!("Received duplicate message with sequence number {}", seq));
     }
 }
 

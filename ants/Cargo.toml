@@ -6,3 +6,5 @@ authors = ["Casey Primozic <me@ameo.link>"]
 [dependencies]
 minutiae = { path = "../minutiae" }
 uuid = { version = "0.5.0", features = ["v4"] }
+pcg = { git = "https://github.com/ameobea/pcg.git" }
+rand = "*"
