@@ -8,9 +8,6 @@ extern crate pcg;
 extern crate rand;
 extern crate uuid;
 
-use std::cell::Cell as RustCell;
-use std::marker::PhantomData;
-
 use pcg::PcgRng;
 use uuid::Uuid;
 use rand::{Rng, SeedableRng};
@@ -26,8 +23,12 @@ extern {
 
 const UNIVERSE_SIZE: usize = 800;
 const ANT_COUNT: usize = 17;
-const FOOD_RARITY: u8 = 50;
+const FOOD_DEPOSIT_COUNT: usize = 25;
+const FOOD_DEPOSIT_SIZE: usize = 76;
+const FOOD_DEPOSIT_RADIUS: usize = 8;
+const MAX_FOOD_QUANTITY: u16 = 4000;
 const PRNG_SEED: [u64; 2] = [198918237842, 9];
+const ANT_FOOD_CAPACITY: usize = 12;
 
 const UNIVERSE_LENGTH: usize = UNIVERSE_SIZE * UNIVERSE_SIZE;
 
@@ -46,7 +47,7 @@ impl Pheremones {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum CellContents {
     Empty,
     Filled(u8),
@@ -71,13 +72,16 @@ enum AntState {
 
 #[derive(Clone)]
 enum ES {
-    Ant(AntState)
+    Ant {
+        state: AntState,
+        held_food: usize,
+    }
 }
 
 impl EntityState<CS> for ES {}
 
 impl ES {
-    pub fn new_ant() -> Entity<CS, Self, MES> { Entity::new(ES::Ant(AntState::Wandering), MES::default()) }
+    pub fn new_ant() -> Entity<CS, Self, MES> { Entity::new(ES::Ant {state: AntState::Wandering, held_food: 0}, MES::default()) }
 }
 
 #[derive(Clone, Default)]
@@ -89,45 +93,82 @@ fn color_calculator(cell: &Cell<CS>, entity_indexes: &[usize], entity_container:
     unimplemented!(); // TODO
 }
 
-struct CA;
+enum CA {
+    LaySearchPheremone, // Deposit a pheremone on the current coordinate indicating that we were here while searching for food
+    LayFoundPheremone, // Deposit a pheremone on the current coordinate indicating that we're returning with food
+    CollectFood(usize), // Collects some food from the specified universe index
+}
 
 impl CellAction<CS> for CA {}
 
 enum EA {
-    EatFood(usize)
+
 }
 
 impl EntityAction<CS, ES> for EA {}
 
 struct WorldGenerator;
 
+/// Given a coordinate, selects a point that's less than `size` units away from the source coordinate as calculated using
+/// Manhattan distance.  The returned coordinate is guarenteed to be valid and within the universe.
+fn rand_coord_near(rng: &mut PcgRng, src_index: usize, max_distance: usize) -> usize {
+    let distance = rng.gen_range(0, max_distance + 1) as isize;
+    loop {
+        let x_mag = rng.gen_range(0, distance);
+        let y_mag = distance - x_mag;
+
+        let (x_offset, y_offset) = match rng.gen_range(0, 3) {
+            0 => (x_mag, y_mag),
+            1 => (-x_mag, y_mag),
+            2 => (x_mag, -y_mag),
+            3 => (-x_mag, -y_mag),
+            _ => unreachable!(),
+        };
+
+        let (x, y) = get_coords(src_index, UNIVERSE_SIZE);
+        let dst_x = x as isize + x_offset;
+        let dst_y = y as isize + y_offset;
+        if dst_x >= 0 && dst_x < UNIVERSE_SIZE as isize && dst_y >= 0 && dst_y < UNIVERSE_SIZE as isize {
+            return get_index(dst_x as usize, dst_y as usize, UNIVERSE_SIZE);
+        }
+    }
+}
+
 impl Generator<CS, ES, MES, CA, EA> for WorldGenerator {
     fn gen(&mut self, conf: &UniverseConf) -> (Vec<Cell<CS>>, Vec<Vec<Entity<CS, ES, MES>>>) {
         let mut rng = PcgRng::from_seed(PRNG_SEED);
         let mut cells = vec![Cell{state: CS {pheremones: Pheremones::new(), contents: CellContents::Empty}}; UNIVERSE_LENGTH];
         let mut entities = vec![Vec::new(); UNIVERSE_LENGTH];
-        // TODO: Spawn food deposits in the world
+
         // Pick location of anthill and spawn ants around it
         let anthill_index = rng.gen_range(0, UNIVERSE_LENGTH);
         cells[anthill_index].state.contents = CellContents::Anthill;
         let (hill_x, hill_y) = get_coords(anthill_index, UNIVERSE_SIZE);
-        let min_x = if hill_x > 3 { hill_x - 3 } else { 0 };
-        let max_x = if hill_x + 4 <= UNIVERSE_SIZE { hill_x + 3 } else { UNIVERSE_SIZE };
-        let min_y = if hill_y > 3 { hill_y - 3 } else { 0 };
-        let max_y = if hill_y + 4 <= UNIVERSE_SIZE { hill_y + 3 } else { UNIVERSE_SIZE };
         let mut spawned_ants = 0;
         // spawn ants close to the anthill to start off
         while spawned_ants < ANT_COUNT {
-            let x = rng.gen_range(min_x, max_x);
-            let y = rng.gen_range(min_y, max_y);
-            let index = get_index(x, y, UNIVERSE_SIZE);
+            let index = rand_coord_near(&mut rng, anthill_index, 4);
             if entities[index].len() == 0 {
                 entities[index].push(ES::new_ant());
                 spawned_ants += 1;
             }
         }
-        // TODO: Spawn ants on the anthill square to start off
-        unimplemented!(); // TODO
+
+        // Create food deposits scattered around the world
+        for _ in 0..FOOD_DEPOSIT_COUNT {
+            // pick a center location for the food cluster
+            let center_index = rng.gen_range(0, UNIVERSE_LENGTH);
+            // place at most `FOOD_DEPOSIT_SIZE` units of food in the area around the center
+            for _ in 0..FOOD_DEPOSIT_SIZE {
+                let food_index = rand_coord_near(&mut rng, center_index, FOOD_DEPOSIT_RADIUS);
+                if cells[food_index].state.contents != CellContents::Anthill {
+                    let food_quantity = rng.gen_range(1, MAX_FOOD_QUANTITY);
+                    cells[food_index].state.contents = CellContents::Food(food_quantity)
+                }
+            }
+        }
+
+        (cells, entities)
     }
 }
 
@@ -143,13 +184,80 @@ fn entity_driver(
     self_action_executor: &mut FnMut(SelfAction<CS, ES, EA>),
     entity_action_executor: &mut FnMut(EA, usize, Uuid)
 ) {
-    unimplemented!(); // TODO
+    match entity.state {
+        ES::Ant{ref state, ..} => match state {
+            &AntState::Wandering => {
+                // lay some pheremone on the current location to indicate that we walked here while searching for food
+                cell_action_executor(CA::LaySearchPheremone, universe_index);
+                // TODO: Wander
+                unimplemented!(); // TODO
+            },
+            &AntState::FollowingTrailToFood => {
+                // TODO: Follow trail to the food
+                unimplemented!(); // TODO
+            },
+            &AntState::ReturningWithFood => {
+                // lay some pheremone on the current location to indicate that we walked here while returning food to the nest
+                cell_action_executor(CA::LayFoundPheremone, universe_index);
+                // TODO: Follow the trail back to the nest
+                unimplemented!(); // TODO
+            },
+        }
+    }
 }
 
 struct AntEngine;
 
-fn exec_cell_action(action: &OwnedAction<CS, ES, CA, EA>) {
-    unimplemented!(); // TODO
+fn exec_cell_action(owned_action: &OwnedAction<CS, ES, CA, EA>, cells: &mut [Cell<CS>], entities: &mut EntityContainer<CS, ES, MES>) {
+    let (mut entity, entity_universe_index) = match entities.get_verify_mut(owned_action.source_entity_index, owned_action.source_uuid) {
+        Some((entity, universe_index)) => (entity, universe_index),
+        None => { return; }, // The entity been deleted, so abort.
+    };
+
+    match &owned_action.action {
+        &Action::CellAction {ref action, ..} => match action {
+            &CA::LaySearchPheremone => {
+                unsafe { cells.get_unchecked_mut(entity_universe_index).state.pheremones.searching += 1 };
+            },
+            &CA::LayFoundPheremone => {
+                unsafe { cells.get_unchecked_mut(entity_universe_index).state.pheremones.found += 1 };
+            },
+            &CA::CollectFood(dst_universe_index) => {
+                let (src_x, src_y) = get_coords(entity_universe_index, UNIVERSE_SIZE);
+                let (dst_x, dst_y) = get_coords(dst_universe_index, UNIVERSE_SIZE);
+                if manhattan_distance(src_x, src_y, dst_x, dst_y) <= 1 {
+                    let mut cell_state = unsafe { &mut cells.get_unchecked_mut(dst_universe_index).state };
+                    match cell_state {
+                        &mut CS {ref mut contents, ..} => {
+                            let new_amount;
+                            match contents {
+                                &mut CellContents::Food(ref mut amount) => {
+                                    *amount -= 1;
+                                    new_amount = *amount;
+                                },
+                                _ => { return; }, // If the targeted cell doesn't contain food, abort.
+                            }
+
+                            // if this removal depleted the food deposit, set it to empty instead
+                            if new_amount == 0 {
+                                *contents = CellContents::Empty;
+                            }
+
+                            // increment the ant's held food count
+                            match entity.state {
+                                ES::Ant {ref state, ref mut held_food} => {
+                                    if *held_food < ANT_FOOD_CAPACITY {
+                                        *held_food += 1
+                                    }
+                                }
+                            }
+                        },
+                    }
+                }
+            }
+        },
+        _ => unreachable!(),
+    }
 }
 
 fn exec_self_action(action: &OwnedAction<CS, ES, CA, EA>) {
@@ -173,7 +281,7 @@ impl SerialEngine<CS, ES, MES, CA, EA, SerialGridIterator, SerialEntityIterator<
         &self, universe: &mut Universe<CS, ES, MES, CA, EA>, cell_actions: &[OwnedAction<CS, ES, CA, EA>],
         self_actions: &[OwnedAction<CS, ES, CA, EA>], entity_actions: &[OwnedAction<CS, ES, CA, EA>]
     ) {
-        for cell_action in cell_actions { exec_cell_action(cell_action); }
+        for cell_action in cell_actions { exec_cell_action(cell_action, &mut universe.cells, &mut universe.entities); }
         for self_action in self_actions { exec_self_action(self_action); }
         for entity_action in entity_actions { exec_entity_action(entity_action); }
     }
@@ -186,7 +294,6 @@ fn get_color(cell: &Cell<CS>, entity_indexes: &[usize], entity_container: &Entit
 }
 
 fn main() {
-    assert!(FOOD_RARITY < 101);
     let conf = UniverseConf {
         iter_cells: false,
         size: 800,
