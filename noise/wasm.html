@@ -3,7 +3,7 @@
   <head>
     <meta charset='utf-8'>
     <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
-    <title>Fish Asm.JS</title>
+    <title>Minutiae Thin Client</title>
     <style>
     body {
       background-color: black;
@@ -23,16 +23,12 @@
     <canvas id='canvas' width='575' height='575'>
 
     <script type='text/javascript'>
-    var output = [];
+      // will be set by a function defined in `library_minutiaeclient` and called by Rust code
+      var socket = null;
 
       var Module = {
         preRun: [],
         postRun: [],
-        print: console.log,
-        printErr: function(text) {
-          if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
-          console.error(text);
-        },
         canvas: (function() {
           var canvas = document.getElementById('canvas');
 
@@ -47,6 +43,6 @@
         })(),
       };
     </script>
-    <script type='text/javascript' src='target/asmjs-unknown-emscripten/release/noise.js'></script>
+    <script type='text/javascript' src='target/wasm32-unknown-emscripten/release/noise.js'></script>
   </body>
 </html>

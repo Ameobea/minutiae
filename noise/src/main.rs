@@ -11,14 +11,14 @@ extern crate noise;
 
 use minutiae::prelude::*;
 use minutiae::emscripten::{EmscriptenDriver, CanvasRenderer};
-use noise::{MultiFractal, NoiseModule, Seedable, Fbm, Point2, Point3};
+use noise::{Max, Billow, Constant, MultiFractal, NoiseModule, Seedable, Fbm, HybridMulti, Point2, Point3, Worley};
 
 extern {
     pub fn canvas_render(ptr: *const u8);
 }
 
-const UNIVERSE_SIZE: usize = 800;
-const MULTIPLIER: f32 = 10.1231;
+const UNIVERSE_SIZE: usize = 575;
+const MULTIPLIER: f32 = /*0.013923431*/0.0912;
 
 struct NoiseUpdater;
 
@@ -90,11 +90,17 @@ impl Generator<CS, ES, MES, CA, EA> for WorldGenerator {
 }
 
 fn main() {
-    let mut noise: Fbm<f32> = Fbm::new()
-        .set_seed(199919776)
-        /*.set_octaves(4)
-        .set_lacunarity(2.0)
-        .set_persistence(1.0)*/;
+    let mut noise1: Fbm<f32> = Fbm::new();
+    // .set_octaves(3)
+        // .set_lacunarity(2.0)
+        // .set_persistence(0.237f32);
+    // let mut noise: HybridMulti<f32> = HybridMulti::new()
+    let mut noise2: Worley<f32> = Worley::new()
+        .set_seed(199919776);
+
+    let constant = Constant::new(0.0f32);
+
+    let mut noise3 = Max::new(noise1, noise2);
 
     // let multiplier: f32 = 10.1231;
     // let vals: Vec<f32> = (0..UNIVERSE_SIZE * UNIVERSE_SIZE).map(|i| {
@@ -107,7 +113,7 @@ fn main() {
     conf.size = UNIVERSE_SIZE;
     let universe = Universe::new(conf, &mut WorldGenerator, |_, _| { None }, |_, _, _, _, _, _, _| {});
     let driver = EmscriptenDriver.init(universe, OurEngine, &mut [
-        Box::new(NoiseStepper(noise)),
+        Box::new(NoiseStepper(noise3)),
         Box::new(CanvasRenderer::new(UNIVERSE_SIZE, calc_color, canvas_render))
     ]);
 }
