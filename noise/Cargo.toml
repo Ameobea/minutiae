@@ -1,0 +1,8 @@
+[package]
+name = "noise"
+version = "0.1.0"
+authors = ["Casey Primozic <me@ameo.link>"]
+
+[dependencies]
+noise = "0.4.1"
+minutiae = { path = "../minutiae" }
