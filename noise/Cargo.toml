@@ -4,5 +4,6 @@ version = "0.1.0"
 authors = ["Casey Primozic <me@ameo.link>"]
 
 [dependencies]
-noise = "0.4.1"
 minutiae = { path = "../minutiae" }
+noise = "0.4.1"
+palette = "0.2"

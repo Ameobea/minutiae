@@ -6,19 +6,26 @@
 //       implementing CA/EA for `()`
 // TODO: Deprecate the entire cell mutator functionality in favor of entirely middleware-driven approaches
 
+#![allow(unused_variables, dead_code)]
+
 extern crate minutiae;
 extern crate noise;
+extern crate palette;
+
+use std::{i32, u16, u32};
+use std::mem::transmute;
 
 use minutiae::prelude::*;
 use minutiae::emscripten::{EmscriptenDriver, CanvasRenderer};
 use noise::{Max, Billow, Constant, MultiFractal, NoiseModule, Seedable, Fbm, HybridMulti, Point2, Point3, Worley};
+use palette::{FromColor, Hsv, Rgb, RgbHue};
 
 extern {
     pub fn canvas_render(ptr: *const u8);
 }
 
 const UNIVERSE_SIZE: usize = 575;
-const MULTIPLIER: f32 = /*0.013923431*/0.0912;
+const MULTIPLIER: f32 = /*0.013923431*/0.0032312;
 
 struct NoiseUpdater;
 
@@ -45,6 +52,7 @@ type OurUniverse = Universe<CS, ES, MES, CA, EA>;
 
 struct OurEngine;
 impl Engine<CS, ES, MES, CA, EA> for OurEngine {
+    #[allow(unused_variables)]
     fn step(&mut self, universe: &mut OurUniverse) {
         // no-op; all logic is handled by the middleware
         universe.seq += 1;
@@ -76,9 +84,25 @@ impl<N: NoiseModule<Point3<f32>, Output=f32>> Middleware<CS, ES, MES, CA, EA, Ou
     }
 }
 
+// MULTIPLIER = 0.00000092312
+fn calc_color1(cell: &Cell<CS>, _: &[usize], _: &EntityContainer<CS, ES, MES>) -> [u8; 4] {
+    // let shade = ((128.0 + (cell.state.0 * 128.0)) * (i32::MAX as f32)) as u32;
+    // unsafe { ::std::mem::transmute::<_, _>(shade) }
+    let mut buf: [u8; 4] = unsafe { transmute(cell.state.0) };
+    buf[3] = 255;
+    let mut buf2: u32 = unsafe { transmute(buf) };
+    buf2 = buf2 ^ 0b101010101010101010101010;
+    unsafe { transmute(buf2) }
+}
+
+// MULTIPLIER = 0.00092312
 fn calc_color(cell: &Cell<CS>, _: &[usize], _: &EntityContainer<CS, ES, MES>) -> [u8; 4] {
-    let shade = (128 + (cell.state.0 * 128.0) as i16) as u8;
-    [shade, shade, shade, 255]
+    // println!("{}", cell.state.0);
+    // assert!(cell.state.0 <= 1.0 && cell.state.0 >= -01.0);
+    let hue: RgbHue = ((cell.state.0 * 360.0) + 180.0).into();
+    let hsv_color = Hsv::new(hue, 1.0, 1.0);
+    let rgb_color = Rgb::from_hsv(hsv_color);
+    [(rgb_color.red * 255.0) as u8, (rgb_color.green * 255.0) as u8, (rgb_color.blue * 255.0) as u8, 255]
 }
 
 struct WorldGenerator;
@@ -95,12 +119,12 @@ fn main() {
         // .set_lacunarity(2.0)
         // .set_persistence(0.237f32);
     // let mut noise: HybridMulti<f32> = HybridMulti::new()
-    let mut noise2: Worley<f32> = Worley::new()
-        .set_seed(199919776);
+    // let mut noise2: Worley<f32> = Worley::new()
+    //     .set_seed(199919776);
 
-    let constant = Constant::new(0.0f32);
+    // let constant = Constant::new(0.0f32);
 
-    let mut noise3 = Max::new(noise1, noise2);
+    // let mut noise3 = Max::new(noise1, noise2);
 
     // let multiplier: f32 = 10.1231;
     // let vals: Vec<f32> = (0..UNIVERSE_SIZE * UNIVERSE_SIZE).map(|i| {
@@ -113,7 +137,7 @@ fn main() {
     conf.size = UNIVERSE_SIZE;
     let universe = Universe::new(conf, &mut WorldGenerator, |_, _| { None }, |_, _, _, _, _, _, _| {});
     let driver = EmscriptenDriver.init(universe, OurEngine, &mut [
-        Box::new(NoiseStepper(noise3)),
+        Box::new(NoiseStepper(noise1)),
         Box::new(CanvasRenderer::new(UNIVERSE_SIZE, calc_color, canvas_render))
     ]);
 }
