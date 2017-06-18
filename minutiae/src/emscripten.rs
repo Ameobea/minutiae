@@ -81,6 +81,13 @@ impl<
     C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, G: Engine<C, E, M, CA, EA>
 > Middleware<C, E, M, CA, EA, G> for CanvasRenderer<C, E, M> {
     fn after_render(&mut self, universe: &mut Universe<C, E, M, CA, EA>) {
+        // check if the universe size has changed since the last render and, if it has, re-size our pixbuf
+        let universe_len = universe.cells.len();
+        let expected_pixbuf_size = universe_len * 4;
+        if expected_pixbuf_size != self.pixbuf.len() && expected_pixbuf_size != 0 {
+            self.pixbuf.resize(expected_pixbuf_size, 255u8);
+        }
+
         // update our internal pixel data buffer from the universe
         for universe_index in 0..universe.cells.len() {
             let entities = universe.entities.get_entities_at(universe_index);
