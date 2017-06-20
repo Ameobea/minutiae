@@ -35,7 +35,6 @@ pub mod util;
 pub mod driver;
 #[cfg(any(feature = "server", feature = "client"))]
 pub mod server;
-#[cfg(target_os = "emscripten")]
 pub mod emscripten;
 
 pub mod prelude {
