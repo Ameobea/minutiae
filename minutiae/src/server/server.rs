@@ -4,22 +4,12 @@
 use std::{mem, ptr, thread};
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, RwLock};
-use std::fmt::Debug;
-use std::io::BufReader;
-use std::cmp::{PartialOrd, Ord, Ordering as CmpOrdering};
+use std::sync::Arc;
 
-use bincode::{self, serialize, deserialize, serialize_into, serialized_size, Infinite};
-use flate2::Compression;
-use flate2::write::DeflateEncoder;
-use flate2::bufread::DeflateDecoder;
-use serde::{Serialize, Deserialize};
-use uuid::Uuid;
 use ws::{self, WebSocket, Handler};
 
 use universe::Universe;
-use container::EntityContainer;
-use cell::{Cell, CellState};
+use cell::CellState;
 use entity::{EntityState, MutEntityState};
 use action::{CellAction, EntityAction};
 use engine::Engine;
@@ -42,7 +32,7 @@ pub struct Server<
     SM: Message, CM: Message, L: ServerLogic<C, E, M, CA, EA, SM, CM>
 > {
     pub universe_len: usize,
-    logic: L,
+    pub logic: L,
     // sender that can be used to broadcast a message to all connected clients
     pub ws_broadcaster: ws::Sender,
     pub seq: Arc<AtomicU32>,
@@ -61,7 +51,7 @@ impl<
     SM: Message + 'static, CM: Message + 'static, L: ServerLogic<C, E, M, CA, EA, SM, CM> + 'static
 > Server<C, E, M, CA, EA, SM, CM, L> {
     pub fn new(universe_size: usize, ws_host: &'static str, logic: L, seq: Arc<AtomicU32>) -> Box<Self> {
-        let mut server = Box::new(Server {
+        let server = Box::new(Server {
             universe_len: universe_size * universe_size,
             logic,
             ws_broadcaster: unsafe { mem::uninitialized() },
@@ -102,7 +92,11 @@ impl<
 > Middleware<C, E, M, CA, EA, N> for Box<Server<C, E, M, CA, EA, SM, CM, L>> {
     fn after_render(&mut self, universe: &mut Universe<C, E, M, CA, EA>) {
         if let Some(msg) = self.logic.tick(universe) {
-            self.ws_broadcaster.send::<&[u8]>(msg.serialize().unwrap().as_slice().into());
+            // convert the message into binary format and then send it over the websocket
+            match self.ws_broadcaster.send::<&[u8]>(msg.bin_serialize().unwrap().as_slice().into()) {
+                Err(err) => println!("Error while sending message over the websocket: {:?}", err),
+                _ => (),
+            }
         }
         self.seq.fetch_add(1, Ordering::Relaxed);
     }
@@ -143,7 +137,7 @@ impl<
         match msg {
             ws::Message::Binary(bin) => {
                 // try to convert the received message into a `ClientMessage`
-                let client_msg: SM = match SM::deserialize(&bin) {
+                let client_msg: SM = match SM::bin_deserialize(&bin) {
                     Ok(m) => m,
                     Err(err) => {
                         println!("Error deserializing `ClientMessage` from binary data sent from user: {:?}", err);
@@ -155,8 +149,8 @@ impl<
                 match L::handle_client_message(server, &client_msg) {
                     Some(msg) => {
                         // serialize and transmit the message to the client
-                        let serialized: Vec<u8> = msg.serialize().expect("Unable to send message to client!");
-                        self.out.send::<&[u8]>(serialized.as_slice().into());
+                        let serialized: Vec<u8> = msg.bin_serialize().expect("Unable to send message to client!");
+                        return self.out.send::<&[u8]>(serialized.as_slice().into())
                     },
                     None => (),
                 }

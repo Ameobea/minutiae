@@ -1,8 +1,6 @@
 //! Executes the simulation, driving progress forward by repeatedly calling the engine's `step()` function.
 //! Allows for things like rendering, using external data, etc. to be implemented between steps.
 
-use std::marker::PhantomData;
-
 use universe::Universe;
 use cell::CellState;
 use entity::{EntityState, MutEntityState};

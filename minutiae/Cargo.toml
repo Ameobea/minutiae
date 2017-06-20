@@ -1,6 +1,6 @@
 [package]
 name = "minutiae"
-version = "0.4.1"
+version = "0.4.2"
 authors = ["Casey Primozic <me@ameo.link>"]
 description = "Cellular Automata-esque simulation engine involving a 2D universe populated by cells and entities"
 repository = "https://github.com/Ameobea/minutiae"

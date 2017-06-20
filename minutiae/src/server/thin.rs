@@ -6,12 +6,16 @@
 //! between ticks are not very large (large differences cause large bandwidth usage).
 
 use std::cmp::Ordering;
+use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 
-use serde::{Serialize, Deserialize};
+#[allow(unused_imports)]
+use test;
 use uuid::Uuid;
 
-use super::{ServerMessage, ClientMessage};
+use super::*;
 use util::Color;
+#[allow(unused_imports)]
+use prelude::*;
 
 /// Defines a message that transmits diff-based data representing how the universe's representation as pixel data
 /// changed between two ticks.
@@ -134,7 +138,7 @@ impl<
 
         // create a `ServerMessage` out of the diffs, serialize/compress it, and broadcast it to all connected clients
         Some(ThinServerMessage {
-            seq: self.seq.load(Ordering::Relaxed),
+            seq: self.seq.load(AtomicOrdering::Relaxed),
             contents: ThinServerMessageContents::Diff(diffs),
         })
     }
@@ -154,4 +158,53 @@ impl<
             _ => None, // TOOD
         }
     }
+}
+
+#[bench]
+/// Tests the process of encoding a server message as binary and compressing it.
+fn server_message_encode(b: &mut test::Bencher) {
+    let message = ThinServerMessage {
+        seq: 100012,
+        contents: ThinServerMessageContents::Diff(vec![Diff{universe_index: 100, color: Color([9u8, 144u8, 88u8])}; 100000]),
+    };
+
+    b.bytes = serialized_size(&message);
+
+    b.iter(|| {
+        message.bin_serialize().unwrap()
+    });
+
+    let bin: Vec<u8> = message.clone().bin_serialize().unwrap();
+    let decoded = ThinServerMessage::bin_deserialize(&bin).unwrap();
+    assert_eq!(message, decoded);
+}
+
+#[bench]
+/// Tests the process of decompressing a compressed binary representation of a message and making it back into a message.
+fn server_message_decode(b: &mut test::Bencher) {
+    let message = ThinServerMessage {
+        seq: 100012,
+        contents: ThinServerMessageContents::Diff(vec![Diff{universe_index: 100, color: Color([9u8, 144u8, 88u8])}; 100000]),
+    };
+    let serialized = message.bin_serialize().unwrap();
+
+    b.bytes = serialized_size(&message);
+
+    b.iter(|| {
+        ThinServerMessage::bin_deserialize(&serialized).unwrap()
+    });
+
+    let decoded = ThinServerMessage::bin_deserialize(&serialized).unwrap();
+    assert_eq!(message, decoded);
+}
+
+#[test]
+fn clientmessage_serialize_deserialize() {
+    let msg = ThinClientMessage{
+        client_id: Uuid::new_v4(),
+        content: ThinClientMessageContent::CellAction{action_id: 8u8, universe_index: 999},
+    };
+    let serialized: Vec<u8> = msg.clone().bin_serialize().unwrap();
+    let deserialized = ThinClientMessage::bin_deserialize(&serialized).unwrap();
+    assert_eq!(msg, deserialized);
 }

@@ -1,6 +1,8 @@
 //! Minutiae Simulation Engine
 
-#![feature(closure_to_fn_coercion, conservative_impl_trait, integer_atomics, test)]
+#![allow(unused_features)]
+
+#![feature(conservative_impl_trait, integer_atomics, test)]
 
 extern crate test;
 extern crate num_cpus;
@@ -33,9 +35,8 @@ pub mod util;
 pub mod driver;
 #[cfg(any(feature = "server", feature = "client"))]
 pub mod server;
-// #[cfg(target_os = "emscripten")]
+#[cfg(target_os = "emscripten")]
 pub mod emscripten;
-
 
 pub mod prelude {
     //! Utility module for re-exporting some commonly used traits

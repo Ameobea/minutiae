@@ -6,12 +6,12 @@ use std::cmp::{Ord, Ordering};
 use std::fmt::{self, Debug, Formatter};
 use std::marker::PhantomData;
 
-use serde::{Serialize, Deserialize, Deserializer};
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
-use universe::{Universe, UniverseConf};
+use universe::Universe;
 use cell::{Cell, CellState};
-use entity::{Entity, EntityState, MutEntityState};
+use entity::{EntityState, MutEntityState};
 use action::{CellAction, EntityAction};
 use container::{EntityContainer, };
 
@@ -22,6 +22,7 @@ pub trait HybParam : Send + Serialize + for<'de> Deserialize<'de> {}
 
 pub type HybridServerSnapshot<C: CellState, E: EntityState<C>, M: MutEntityState> = (Vec<Cell<C>>, EntityContainer<C, E, M>);
 
+#[allow(non_camel_case_types)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(bound = "C: for<'d> Deserialize<'d>")]
 pub enum HybridServerMessageContents<
