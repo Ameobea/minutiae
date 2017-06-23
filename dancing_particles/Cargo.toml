@@ -7,5 +7,7 @@ authors = ["Casey Primozic <me@ameo.link>"]
 #minutiae = { version = "0.4.3" }
 minutiae = { path = "../minutiae" }
 noise = { git = "https://github.com/Ameobea/noise-rs.git" }
+palette = "0.2"
 pcg = { git = "https://github.com/codahale/pcg.git" }
+rand = "*"
 uuid = { version = "0.5.0", features = ["v4"] }
