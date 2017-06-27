@@ -5,6 +5,14 @@
 
 See the readme files in each of the subdirectories for more information about each of them.
 
-* **client**: A web-based thin client that can be used to view and interact with a simulation running remotely.
-* **fish**: A simulation implementation involving small swimming fish providing a good example of how to use the library
+# Library
+
 * **minutiae**: The library itself
+* **client**: A web-based thin client that can be used to view and interact with a simulation running remotely.
+
+## Demos
+
+* **ants**: A virtual, persistant, real-time ant colony.  Very WIP
+* **dancing_particles**: An attempt at creating particles that move around together in response to hidden noise functions.
+* **fish**: A simulation implementation involving small swimming fish providing a good example of how to use the library.
+* **liquid_gold**: A generated world consisting of "ore" which is transformed into an iridescent gold fluid.

@@ -36,7 +36,8 @@ use noise_engine::*;
 const UNIVERSE_SIZE: usize = 500;
 const PARTICLE_COUNT: usize = 20000;
 const VIEW_DISTANCE: usize = 1;
-const SPEED: f32 = 0.00758 * 2.;
+const SPEED: f32 = 0.00758;
+const ZOOM: f32 = 0.00132312;
 
 // minutiae type definitions
 
@@ -136,7 +137,9 @@ fn entity_driver(
 }
 
 fn get_color(cell: &Cell<CS>, entity_indexes: &[usize], entity_container: &EntityContainer<CS, ES, MES>) -> [u8; 4] {
-    if entity_indexes.len() == 0 { [0, 0, 0, 1] } else { cell.state.get_color() }
+    if entity_indexes.len() == 0 { cell.state.get_color() } else {
+        if ! unsafe { entity_container.get(entity_indexes[0]).state.secondary } { [255, 0, 0, 255] } else { [0, 255, 0, 255] }
+    }
 }
 
 fn main() {
@@ -155,6 +158,7 @@ fn main() {
     conf.canvas_size = UNIVERSE_SIZE;
     // conf.octaves = 1;
     conf.speed = SPEED;
+    conf.zoom = ZOOM;
     conf.needs_new_noise_gen = true;
     conf.needs_update = true;
     let noise_middleware = NoiseMiddleware {

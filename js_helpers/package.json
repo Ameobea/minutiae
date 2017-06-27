@@ -1,0 +1,24 @@
+{
+  "name": "minutiae_js_helpers",
+  "version": "0.1.0",
+  "description": "Helper utilities written in JavaScript for minuiae simulations.",
+  "main": "src/index.js",
+  "repository": "https://github.com/ameobea/minutiae",
+  "author": "Casey Primozic <me@ameo.link>",
+  "license": "MIT",
+  "scripts": {
+    "build": "babel lib -d src",
+    "start": "nodemon lib/index.js --exec babel-node"
+  },
+  "dependencies": {
+    "chroma-js": "^1.3.4",
+    "lodash": "^4.17.4"
+  },
+  "devDependencies": {
+    "babel-cli": "^6.0.0",
+    "babel-eslint": "^7.2.3",
+    "babel-preset-env": "^1.5.2",
+    "eslint": "^3.19.0",
+    "nodemon": "^1.11.0"
+  }
+}
