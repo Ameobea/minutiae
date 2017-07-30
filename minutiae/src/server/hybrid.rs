@@ -5,7 +5,7 @@
 use std::cmp::{Ord, Ordering};
 use std::fmt::{self, Debug, Formatter};
 use std::marker::PhantomData;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 
 use serde::{Serialize, Deserialize};
@@ -34,11 +34,7 @@ pub enum HybridServerMessageContents<
     CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA>
 > {
     Snapshot(HybridServerSnapshot<C, E, M>),
-    Event {
-        self_actions: Vec<V>,
-        cell_actions: Vec<V>,
-        entity_cations: Vec<V>,
-    },
+    Event(Vec<V>),
     __phantom_c(PhantomData<C>),
     __phantom_e(PhantomData<E>),
     __phantom_m(PhantomData<M>),
@@ -140,12 +136,36 @@ impl<
     }
 }
 
+impl<
+    C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam, CA: CellAction<C> + HybParam,
+    EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam
+> HybridServerMessage<C, E, M, CA, EA, V> {
+    pub fn new(seq: u32, contents: HybridServerMessageContents<C, E, M, CA, EA, V>) -> Self {
+        HybridServerMessage {
+            seq, contents,
+            __phantom_c: PhantomData,
+            __phantom_e: PhantomData,
+            __phantom_m: PhantomData,
+            __phantom_ca: PhantomData,
+            __phantom_ea: PhantomData,
+            __phantom_v: PhantomData,
+        }
+    }
+}
+
 pub struct HybridServer<
     C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
     CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam,
+    F: Fn(
+        &mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>]
+    ) -> Option<Vec<V>>,
 > {
     pub pending_snapshot: bool,
     pub seq: Arc<AtomicU32>,
+    pub event_generator: F,
+    pub self_actions: Arc<RwLock<Vec<OwnedAction<C, E, CA, EA>>>>,
+    pub cell_actions: Arc<RwLock<Vec<OwnedAction<C, E, CA, EA>>>>,
+    pub entity_actions: Arc<RwLock<Vec<OwnedAction<C, E, CA, EA>>>>,
     __phantom_c: PhantomData<C>,
     __phantom_e: PhantomData<E>,
     __phantom_m: PhantomData<M>,
@@ -156,15 +176,38 @@ pub struct HybridServer<
 
 impl<
     C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam,
-> ServerLogic<C, E, M, CA, EA, HybridServerMessage<C, E, M, CA, EA, V>, HybridClientMessage> for HybridServer<C, E, M, CA, EA, V> {
-    fn tick(&mut self, universe: &mut Universe<C, E, M, CA, EA>) -> Option<HybridServerMessage<C, E, M, CA, EA, V>> {
+    CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam + Clone,
+    F: Fn(
+        &mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>]
+    ) -> Option<Vec<V>>
+> ServerLogic<C, E, M, CA, EA, HybridServerMessage<C, E, M, CA, EA, V>, HybridClientMessage> for HybridServer<C, E, M, CA, EA, V, F> {
+    fn tick(&mut self, universe: &mut Universe<C, E, M, CA, EA>) -> Option<Vec<HybridServerMessage<C, E, M, CA, EA, V>>> {
+        let mut pending_messages: Option<Vec<V>> = None;
         if self.pending_snapshot {
             self.pending_snapshot = false;
-            unimplemented!(); // TODO
+            pending_messages = Some(vec![]);
         }
+
         self.seq.fetch_add(1, AtomicOrdering::Relaxed);
-        unimplemented!(); // TODO
+
+        // use the user-defined logic to get the events to pass through to the clients.  The internal action buffers
+        // are used as the sources for this.
+        // TODO: Look into recycling the buffers rather than reallocating if we're going to keep this system (we shouldn't)
+        let merged_events: Vec<V> = match (self.event_generator)(
+            universe, &*self.self_actions.read().unwrap(), &*self.cell_actions.read().unwrap(), &*self.entity_actions.read().unwrap()
+        ) {
+            Some(events) => {
+                match pending_messages {
+                    Some(pending) => {
+                        [&pending[..], &events[..]].concat()
+                    },
+                    None => events,
+                }
+            },
+            None => pending_messages.unwrap_or(vec![]),
+        };
+
+        Some(vec![HybridServerMessage::new(self.seq.load(AtomicOrdering::Relaxed), HybridServerMessageContents::Event(merged_events))])
     }
 
     fn handle_client_message(
@@ -178,7 +221,6 @@ impl<
                 server.logic.pending_snapshot = true;
                 None
             },
-            _ => unreachable!(),
         }
     }
 }
@@ -186,32 +228,48 @@ impl<
 impl<
     C: CellState + HybParam + 'static, E: EntityState<C> + HybParam + 'static, M: MutEntityState + HybParam + 'static,
     CA: CellAction<C> + HybParam + 'static, EA: EntityAction<C, E> + HybParam + 'static, V: Event<C, E, M, CA, EA> + HybParam + 'static,
-> HybridServer<C, E, M, CA, EA, V> {
+    F: Fn(
+        &mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>]
+    ) -> Option<Vec<V>>
+> HybridServer<C, E, M, CA, EA, V, F> where OwnedAction<C, E, CA, EA>:Clone {
     /// Takes the action handlers for the engine and hooks them, getting an intermediate view of the actions
     /// so that they can be transmitted to the client before handling them on the client side.
     pub fn hook_handler(
         action_executor: fn(&mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>],
-        &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>])
+        &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>]), event_generator: F
     ) -> (ActionExecutor<C, E, M, CA, EA>, Self) {
+        let hybrid_server = HybridServer::new(event_generator);
+        // create copies of the buffers so that we can write to them from outside
+        let self_action_buf = hybrid_server.self_actions.clone();
+        let cell_action_buf = hybrid_server.cell_actions.clone();
+        let entity_action_buf = hybrid_server.entity_actions.clone();
+
         // create an action handler that can be passed back which handles our logic as well as the original logic
         let hooked_handler = move |
             universe: &mut Universe<C, E, M, CA, EA>, self_actions: &[OwnedAction<C, E, CA, EA>],
             cell_actions: &[OwnedAction<C, E, CA, EA>], entity_actions: &[OwnedAction<C, E, CA, EA>]
         | {
-            // form the actions into messages and send them to the client
-            unimplemented!(); // TODO
+            // copy the actions into our internal buffers so that they can be used later once we have access
+            // to the universe to create our final events.
+            *&mut *self_action_buf.write().unwrap() = self_actions.into();
+            *&mut *cell_action_buf.write().unwrap() = cell_actions.into();
+            *&mut *entity_action_buf.write().unwrap() = entity_actions.into();
 
             // Call the consumed action handler and actually mutate the universe.
             action_executor(universe, self_actions, cell_actions, entity_actions);
         };
 
-        (Box::new(hooked_handler), HybridServer::new())
+        (Box::new(hooked_handler), hybrid_server)
     }
 
-    pub fn new() -> Self {
+    pub fn new(event_generator: F) -> Self {
         HybridServer {
             pending_snapshot: false,
             seq: Arc::new(AtomicU32::new(0)),
+            event_generator,
+            self_actions: Arc::new(RwLock::new(Vec::new())),
+            cell_actions: Arc::new(RwLock::new(Vec::new())),
+            entity_actions: Arc::new(RwLock::new(Vec::new())),
             __phantom_c: PhantomData,
             __phantom_e: PhantomData,
             __phantom_m: PhantomData,

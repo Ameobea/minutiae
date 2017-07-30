@@ -17,6 +17,18 @@ pub struct OwnedAction<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: E
     pub action: Action<C, E, CA, EA>,
 }
 
+impl<
+    C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>
+> Clone for OwnedAction<C, E, CA, EA> where Action<C, E, CA, EA>:Clone {
+    fn clone(&self) -> Self {
+        OwnedAction {
+            source_entity_index: self.source_entity_index,
+            source_uuid: self.source_uuid,
+            action: self.action.clone(),
+        }
+    }
+}
+
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
 pub enum Action<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>>  {
@@ -30,6 +42,20 @@ pub enum Action<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAc
         target_uuid: Uuid,
     },
     SelfAction(SelfAction<C, E, EA>),
+}
+
+impl<
+    C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>
+> Clone for Action<C, E, CA, EA> where C:Clone, E:Clone, CA:Clone, EA:Clone, SelfAction<C, E, EA>:Clone {
+    fn clone(&self) -> Self {
+        match self {
+            &Action::CellAction { ref action, universe_index } =>
+                Action::CellAction { action: action.clone(), universe_index },
+            &Action::EntityAction { ref action, target_entity_index, target_uuid } =>
+                Action::EntityAction { action: action.clone(), target_entity_index, target_uuid },
+            &Action::SelfAction(ref action) => Action::SelfAction(action.clone()),
+        }
+    }
 }
 
 /// An attempt of an entity to mutate a cell.
@@ -47,6 +73,20 @@ pub enum SelfAction<C: CellState, E: EntityState<C>, EA: EntityAction<C, E>> {
     Custom(EA),
     __phantom_c(PhantomData<C>),
     __phantom_e(PhantomData<E>),
+}
+
+impl<
+    C: CellState, E: EntityState<C>, EA: EntityAction<C, E>
+> Clone for SelfAction<C, E, EA> where EA:Clone {
+    fn clone(&self) -> Self {
+        match self {
+            &SelfAction::Translate(x, y) => SelfAction::Translate(x, y),
+            &SelfAction::Suicide => SelfAction::Suicide,
+            &SelfAction::Custom(ref ea) => SelfAction::Custom(ea.clone()),
+            &SelfAction::__phantom_c(spooky) => SelfAction::__phantom_c(spooky),
+            &SelfAction::__phantom_e(scary) => SelfAction::__phantom_e(scary),
+        }
+    }
 }
 
 impl<C: CellState, E: EntityState<C>, EA: EntityAction<C, E>> SelfAction<C, E, EA> {

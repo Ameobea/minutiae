@@ -119,7 +119,7 @@ impl<
     C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static,
     CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static,
 > ServerLogic<C, E, M, CA, EA, ThinServerMessage, ThinClientMessage> for ColorServer<C, E, M> {
-    fn tick(&mut self, universe: &mut Universe<C, E, M, CA, EA>) -> Option<ThinServerMessage> {
+    fn tick(&mut self, universe: &mut Universe<C, E, M, CA, EA>) -> Option<Vec<ThinServerMessage>> {
         // TODO: Create an option for making this parallel because it's a 100% parallelizable task
         let mut diffs = Vec::new();
         let mut colors = self.colors.write().expect("Unable to lock colors vector for writing!");
@@ -137,10 +137,10 @@ impl<
         }
 
         // create a `ServerMessage` out of the diffs, serialize/compress it, and broadcast it to all connected clients
-        Some(ThinServerMessage {
+        Some(vec![ThinServerMessage {
             seq: self.seq.load(AtomicOrdering::Relaxed),
             contents: ThinServerMessageContents::Diff(diffs),
-        })
+        }])
     }
 
     fn handle_client_message(

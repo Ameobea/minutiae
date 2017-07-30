@@ -22,7 +22,7 @@ pub trait ServerLogic<
     SM: Message, CM: Message
 > : Sized {
     // called every tick; the resulting messages are broadcast to every connected client.
-    fn tick(&mut self, universe: &mut Universe<C, E, M, CA, EA>) -> Option<SM>;
+    fn tick(&mut self, universe: &mut Universe<C, E, M, CA, EA>) -> Option<Vec<SM>>;
     // called for every message received from a client.
     fn handle_client_message(&mut Server<C, E, M, CA, EA, SM, CM, Self>, &CM) -> Option<Vec<SM>>;
 }
@@ -91,11 +91,13 @@ impl<
     SM: Message + 'static, CM: Message + 'static, L: ServerLogic<C, E, M, CA, EA, SM, CM> + 'static
 > Middleware<C, E, M, CA, EA, N> for Box<Server<C, E, M, CA, EA, SM, CM, L>> {
     fn after_render(&mut self, universe: &mut Universe<C, E, M, CA, EA>) {
-        if let Some(msg) = self.logic.tick(universe) {
-            // convert the message into binary format and then send it over the websocket
-            match self.ws_broadcaster.send::<&[u8]>(msg.bin_serialize().unwrap().as_slice().into()) {
-                Err(err) => println!("Error while sending message over the websocket: {:?}", err),
-                _ => (),
+        if let Some(msgs) = self.logic.tick(universe) {
+            for msg in msgs {
+                // convert the message into binary format and then send it over the websocket
+                match self.ws_broadcaster.send::<&[u8]>(msg.bin_serialize().unwrap().as_slice().into()) {
+                    Err(err) => println!("Error while sending message over the websocket: {:?}", err),
+                    _ => (),
+                }
             }
         }
         self.seq.fetch_add(1, Ordering::Relaxed);
