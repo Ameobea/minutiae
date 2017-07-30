@@ -20,13 +20,20 @@ type ActionBufs<
     C: CellState + 'static, E: EntityState<C> + 'static, CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static
 > = (Vec<OwnedAction<C, E, CA, EA>>, usize, Vec<OwnedAction<C, E, CA, EA>>, usize, Vec<OwnedAction<C, E, CA, EA>>, usize,);
 
+pub type ActionExecutor<
+    C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static, CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static
+> = Box<Fn(
+    &mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>]
+)>;
+
 pub struct ParallelEngine<
     C: CellState + Send + 'static, E: EntityState<C> + Send + 'static, M: MutEntityState + Send + 'static, CA: CellAction<C> + Send + 'static,
     EA: EntityAction<C, E> + Send + 'static, CI: GridIterator
 > {
     worker_count: usize,
     grid_iterator: CI,
-    exec_actions: fn(&mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>]),
+    // Uses a function trait out of necessity since we have need to do that for the hybrid server.
+    exec_actions: ActionExecutor<C, E, M, CA, EA>,
     action_buf_rx: Receiver<ActionBufs<C, E, CA, EA>>,
     wakeup_senders: Vec<SyncSender<WakeupMessage<C, E, M, CA, EA>>>,
     index: Arc<AtomicUsize>,
@@ -55,11 +62,11 @@ unsafe impl<
 
 impl<
     C: CellState + Send, E: EntityState<C> + Send, M: MutEntityState + Send, CA: CellAction<C> + Send,
-    EA: EntityAction<C, E> + Send, CI: GridIterator
+    EA: EntityAction<C, E> + Send, CI: GridIterator,
 > ParallelEngine<C, E, M, CA, EA, CI> {
     pub fn new(
         grid_iterator: CI,
-        exec_actions: fn(&mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>]),
+        exec_actions: ActionExecutor<C, E, M, CA, EA>,
         entity_driver: fn(
             universe_index: usize,
             entity: &Entity<C, E, M>,
@@ -213,7 +220,7 @@ impl<
 
 impl<
     C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static, CA: CellAction<C> + 'static,
-    EA: EntityAction<C, E> + 'static, CI: GridIterator
+    EA: EntityAction<C, E> + 'static, CI: GridIterator,
 > Engine<C, E, M, CA, EA> for Box<ParallelEngine<C, E, M, CA, EA, CI>> where
     C:Send, E:Send, M:Send, CA:Send, EA:Send, CA: ::std::fmt::Debug, EA: ::std::fmt::Debug, C: ::std::fmt::Debug, E: ::std::fmt::Debug
 {

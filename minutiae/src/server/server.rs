@@ -24,7 +24,7 @@ pub trait ServerLogic<
     // called every tick; the resulting messages are broadcast to every connected client.
     fn tick(&mut self, universe: &mut Universe<C, E, M, CA, EA>) -> Option<SM>;
     // called for every message received from a client.
-    fn handle_client_message(&mut Server<C, E, M, CA, EA, SM, CM, Self>, &CM) -> Option<SM>;
+    fn handle_client_message(&mut Server<C, E, M, CA, EA, SM, CM, Self>, &CM) -> Option<Vec<SM>>;
 }
 
 pub struct Server<
@@ -147,10 +147,12 @@ impl<
 
                 let server: &mut Server<C, E, M, CA, EA, CM, SM, L> = unsafe { &mut *self.server_ptr.0 };
                 match L::handle_client_message(server, &client_msg) {
-                    Some(msg) => {
-                        // serialize and transmit the message to the client
-                        let serialized: Vec<u8> = msg.bin_serialize().expect("Unable to send message to client!");
-                        return self.out.send::<&[u8]>(serialized.as_slice().into())
+                    Some(msgs) => {
+                        // serialize and transmit the messages to the client
+                        for msg in msgs {
+                            let serialized: Vec<u8> = msg.bin_serialize().expect("Unable to send message to client!");
+                            self.out.send::<&[u8]>(serialized.as_slice().into()); // TODO: Look into handling errors
+                        }
                     },
                     None => (),
                 }

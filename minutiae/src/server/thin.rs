@@ -145,15 +145,15 @@ impl<
 
     fn handle_client_message(
         server: &mut Server<C, E, M, CA, EA, ThinServerMessage, ThinClientMessage, Self>, client_message: &ThinClientMessage
-    ) -> Option<ThinServerMessage> {
+    ) -> Option<Vec<ThinServerMessage>> {
         match client_message.content {
             ThinClientMessageContent::SendSnapshot => {
                 // create the snapshot by cloning the colors from the server.
                 let snap: Vec<Color> = (*server).logic.colors.read().unwrap().clone();
-                Some(ThinServerMessage {
+                Some(vec![ThinServerMessage {
                     seq: (*server).get_seq(),
                     contents: ThinServerMessageContents::Snapshot(snap),
-                })
+                }])
             },
             _ => None, // TOOD
         }
