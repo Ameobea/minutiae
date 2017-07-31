@@ -31,12 +31,15 @@ impl<
         // iterate over the universe's cells one at a time, applying their state transitions immediately
         if universe.conf.iter_cells {
             let cell_iterator: &mut GridIterator = &mut self.iter_cells(&universe.cells);
-            for index in cell_iterator {
-                match (universe.cell_mutator)(index, &universe.cells) {
-                    Some(new_state) => universe.cells[index].state = new_state,
-                    None => (),
-                }
-            }
+            // This breaks compilations on Emscripten as of lately, for some reason..... when used with this cell mutator:
+            // pub fn cell_mutator(_: usize, _: &[Cell<CS>]) -> Option<CS> { None }
+            //
+            // for index in cell_iterator {
+            //     match (universe.cell_mutator)(index, &universe.cells) {
+            //         Some(new_state) => universe.cells[index].state = new_state,
+            //         None => (),
+            //     }
+            // }
         }
 
         // iterate over the universe's entities one at a time, passing their requested actions into the engine's core
