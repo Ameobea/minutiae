@@ -2,7 +2,7 @@
 
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
-
+ 
 extern crate minutiae;
 extern crate noise;
 extern crate serde;
@@ -22,7 +22,7 @@ use noise::Billow;
 
 extern {
     /// Invokes the external JS function to pass this buffer to WebGL and render it
-    pub fn buf_render(ptr: *const f64);
+    pub fn buf_render(ptr: *const f32);
     /// Direct line to `console.log` from JS since the simulated `stdout` is dead after `main()` completes
     pub fn js_debug(msg: *const c_char);
     /// Direct line to `console.error` from JS since the simulated `stdout` is dead after `main()` completes
@@ -44,14 +44,14 @@ pub fn error(msg: &str) {
     unsafe { js_error(c_str.as_ptr()) };
 }
 
-const UNIVERSE_SIZE: usize = 800;
+const UNIVERSE_SIZE: usize = 64;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CS(Vec<f64>); // Psuedo-3d
+pub struct CS(Vec<f32>); // Psuedo-3d
 impl CellState for CS {}
 impl BufColumn for CS {
-    fn get_col(&self) -> &[f64] { &self.0 } // nothing to compute since we're just storing `f64`s in the backend as well.
-    fn get_col_mut(&mut self) -> &mut [f64] { &mut self.0 }
+    fn get_col(&self) -> &[f32] { &self.0 } // nothing to compute since we're just storing `f32`s in the backend as well.
+    fn get_col_mut(&mut self) -> &mut [f32] { &mut self.0 }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -103,7 +103,7 @@ impl Generator<CS, ES, MES, CA, EA> for WG {
     fn gen(&mut self, _: &UniverseConf) -> (Vec<Cell<CS>>, Vec<Vec<Entity<CS, ES, MES>>>) {
         // create a blank universe to start off with
         (
-            vec![Cell{ state: CS(vec![0.0f64; UNIVERSE_SIZE]) }; 800 * 800],
+            vec![Cell{ state: CS(vec![0.0f32; UNIVERSE_SIZE]) }; UNIVERSE_SIZE * UNIVERSE_SIZE],
             vec![vec![Entity::new(ES::Unit, MES::default())]]
         )
     }
@@ -127,7 +127,7 @@ pub fn main() {
     let noise_gen = Billow::new();
 
     driver.init(universe, engine, &mut [
-        Box::new(MinDelay::from_tps(59.97)),
+        // Box::new(MinDelay::from_tps(59.97)),
         Box::new(NoiseStepper::new(noise_gen, None)),
         Box::new(Buf3dWriter::new(UNIVERSE_SIZE, buf_render)),
     ]);

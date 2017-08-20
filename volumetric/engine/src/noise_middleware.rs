@@ -39,7 +39,7 @@ fn drive_noise<C: CellState + BufColumn>(
                 let val = noise.get([x as f64 * zoom, y as f64 * zoom, (z as f64) * speed]);
 
                 // set the cell's state equal to that value
-                column[z] = val;
+                column[z] = val as f32;
             }
         }
     }
