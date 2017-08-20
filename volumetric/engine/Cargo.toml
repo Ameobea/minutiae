@@ -1,0 +1,15 @@
+[package]
+name = "volumetric"
+version = "0.1.0"
+authors = ["Casey Primozic <me@ameo.link>"]
+
+[dependencies]
+clippy = { git = "https://github.com/Manishearth/rust-clippy", optional = true }
+minutiae = { path = "../../minutiae" }
+serde = "1.*.*"
+serde_derive = "1.*.*"
+uuid = { version = "0.5.0", features = ["v4"] }
+
+[dependencies.noise]
+path = "../../../noise-rs"
+version = "0.4.1"
