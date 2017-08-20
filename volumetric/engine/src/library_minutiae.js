@@ -3,10 +3,24 @@ mergeInto(LibraryManager.library, {
    * Given a pointer to the 3D array of floating point data, renders it using WebGL
    */
   buf_render: function(ptr) {
+    if(!Module.vs || !Module.fs) {
+      // wait for shader source code to be retrieved before trying to render anything
+      return;
+    }
+
     var canvas = Module.canvas;
     var gl = canvas.getContext('webgl2');
     if (!gl) {
       alert('needs webgl 2.0');
+      return;
+    }
+
+    if(!shadersCompiled) {
+      var programInfo = twgl.createProgramInfo(gl, [Module.vs, Module.fs]);
+      var bufferInfo = twgl.primitives.createXYQuadBufferInfo(gl);
+
+      gl.useProgram(programInfo.program);
+      twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo);
     }
 
     // Create the slice looking into Emscripten memory
@@ -35,49 +49,6 @@ mergeInto(LibraryManager.library, {
       buf
     );
 
-    // copied from https://stackoverflow.com/questions/37586193/support-for-short-3d-texture-in-webgl-2-0
-    // FS code:
-
-    var fs = `#version 300 es
-
-    precision highp float;
-    precision highp int;
-    precision highp isampler3D;
-
-    uniform isampler3D textureData;
-
-    in vec3 v_texcoord;
-
-    out vec4 color;
-
-    void main()
-    {
-       /*ivec4 value = texture(textureData, v_texcoord);
-       if( value.x == 0 )
-          color = vec4(1.0, 0.0, 0.0, 1.0);
-       else if( value.x == 1)
-          color = vec4(1.0, 1.0, 0.0, 1.0);
-       else if( value.x < 0 )
-          color = vec4(0.0, 0.0, 1.0, 1.0);
-       else*/
-          color = vec4(1.0,0.0,0.0,1.0);
-    }
-    `;
-
-    var vs = `#version 300 es
-    in vec4 position;
-    out vec3 v_texcoord;
-    void main() {
-      gl_Position = position;
-      v_texcoord = vec3(0);
-    }
-    `
-
-    var programInfo = twgl.createProgramInfo(gl, [vs, fs]);
-    var bufferInfo = twgl.primitives.createXYQuadBufferInfo(gl);
-
-    gl.useProgram(programInfo.program);
-    twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo);
     twgl.drawBufferInfo(gl, bufferInfo);
   },
 });

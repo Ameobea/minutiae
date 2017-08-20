@@ -19,6 +19,7 @@
 
     <script type='text/javascript'>
       var output = [];
+
       var Module = {
         preRun: [
           function() { ENV.RUST_BACKTRACE = "1" },
@@ -30,7 +31,19 @@
           console.error(text);
         },
         canvas: document.getElementById('canvas'),
+        shadersCompiled: false,
       };
+
+      // fetch the GLSL shaders, compile it, and store it in `Module`
+      Promise.all([
+        fetch('http://localhost:5000/gl/fs.frag')
+          .then(function(res) { return res.text(); }),
+        fetch('http://localhost:5000/gl/vs.vert')
+          .then(function(res) { return res.text(); }),
+      ]).then(function(shaders) {
+        Module.fs = shaders[0];
+        Module.vs = shaders[1];
+      });
     </script>
     <script type='text/javascript' src='http://localhost:5000/dist/volumetric.js'></script>
   </body>

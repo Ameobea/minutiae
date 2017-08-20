@@ -2,7 +2,7 @@
 
 #![cfg_attr(feature="clippy", feature(plugin))]
 #![cfg_attr(feature="clippy", plugin(clippy))]
- 
+
 extern crate minutiae;
 extern crate noise;
 extern crate serde;
@@ -14,10 +14,9 @@ use std::ffi::CString;
 use std::os::raw::c_char;
 
 use minutiae::prelude::*;
-use minutiae::driver::BasicDriver;
+use minutiae::emscripten::EmscriptenDriver;
 use minutiae::engine::serial::SerialEngine;
 use minutiae::engine::iterator::{SerialGridIterator, SerialEntityIterator};
-use minutiae::driver::middleware::MinDelay;
 use noise::Billow;
 
 extern {
@@ -120,7 +119,7 @@ pub fn main() {
         view_distance: 1,
     };
     let universe = Universe::new(conf, &mut WG, cell_mutator, entity_driver);
-    let driver = BasicDriver;
+    let driver = EmscriptenDriver;
     let engine: Box<SerialEngine<CS, ES, MES, CA, EA, SerialGridIterator, SerialEntityIterator<CS, ES>>> = Box::new(OurEngine);
 
     // create a noise generator to be used to populate the buffer
