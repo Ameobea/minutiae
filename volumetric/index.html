@@ -5,8 +5,8 @@
     <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
     <title>Volumetric</title>
 
-    <!-- TWGL -->
-    <script src="https://ameo.link/u/4l6.js"></script>
+    <!-- gpu.js -->
+    <script src="https://ameo.link/u/4l8.js"></script>
 
     <style>
     body, canvas {
@@ -33,17 +33,6 @@
         canvas: document.getElementById('canvas'),
         shadersCompiled: false,
       };
-
-      // fetch the GLSL shaders, compile it, and store it in `Module`
-      Promise.all([
-        fetch('http://localhost:5000/gl/fs.frag')
-          .then(function(res) { return res.text(); }),
-        fetch('http://localhost:5000/gl/vs.vert')
-          .then(function(res) { return res.text(); }),
-      ]).then(function(shaders) {
-        Module.fs = shaders[0];
-        Module.vs = shaders[1];
-      });
     </script>
     <script type='text/javascript' src='http://localhost:5000/dist/volumetric.js'></script>
   </body>

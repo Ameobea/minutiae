@@ -1,56 +1,41 @@
 mergeInto(LibraryManager.library, {
+  rayMarcherKernel = gpu.createKernel(function(buf, cameraX, cameraY, cameraZ, focalX, focalY, focalZ) {
+    var maxSteps = 128;
+    var stepSize = 1.0;
+
+    var x = this.thread.x;
+    var y = this.thread.y;
+
+    var curX = cameraX;
+    var curY = cameraY;
+    var curZ = cameraZ;
+
+    // TODO: Calculate coordinates of our pixel within the virtual screen.
+    //       It's somewhere in front of the camera; calculate vector between the camera
+    //       and the origin and the focal point.
+
+    // TODO: Calculate the vector between the camera and the virtual screen coord.
+    //       This vector will be added to the current coords iteratively to perform the raymarch.
+
+    var acc = 0;
+    for(var i=0; i<maxSteps; i++) {
+      // get the value for the current coordinate from the data buffer
+
+      // accumulate the color/intensity value
+
+      // increment the current coordinates 
+    }
+
+    this.color(0.0, 1.0, 0.5, 1.0); // TODO
+  }).setOutput([Module.canvas.width, Module.canvas.width]).setGraphical(true),
   /**
    * Given a pointer to the 3D array of floating point data, renders it using WebGL
    */
   buf_render: function(ptr) {
-    if(!Module.vs || !Module.fs) {
-      // wait for shader source code to be retrieved before trying to render anything
-      return;
-    }
-
-    var canvas = Module.canvas;
-    var gl = canvas.getContext('webgl2');
-    if (!gl) {
-      alert('needs webgl 2.0');
-      return;
-    }
-
-    if(!Module.shadersCompiled) {
-      var programInfo = twgl.createProgramInfo(gl, [Module.vs, Module.fs]);
-      var bufferInfo = twgl.primitives.createXYQuadBufferInfo(gl);
-
-      gl.useProgram(programInfo.program);
-      twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo);
-
-      Module.shadersCompiled = true;
-    }
-
     // Create the slice looking into Emscripten memory
-    var size = canvas.width;
+    var size = Module.canvas.width;
     var buf = new Float32Array(HEAPU8.buffer, ptr, size * size * size);
 
-    // initialize the 3D texture
-    var texture = gl.createTexture();
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_3D, texture);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_BASE_LEVEL, 0);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAX_LEVEL, 0);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-
-    gl.texImage3D(
-      gl.TEXTURE_3D,
-      0,
-      gl.R32F,
-      size,
-      size,
-      size,
-      0,
-      gl.RED,
-      gl.FLOAT,
-      buf
-    );
-
-    twgl.drawBufferInfo(gl, bufferInfo);
+    // TODO: Call the raymarcher kernel and render the created canvas
   },
 });
