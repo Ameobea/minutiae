@@ -26,6 +26,8 @@ extern {
     pub fn js_debug(msg: *const c_char);
     /// Direct line to `console.error` from JS since the simulated `stdout` is dead after `main()` completes
     pub fn js_error(msg: *const c_char);
+    /// Emits a JS `debugger` statement in the generated JS source code
+    pub fn emscripten_debugger();
 }
 
 mod buf3d_middleware;
@@ -127,7 +129,7 @@ pub fn main() {
 
     driver.init(universe, engine, &mut [
         // Box::new(MinDelay::from_tps(59.97)),
-        Box::new(NoiseStepper::new(noise_gen, None)),
+        Box::new(NoiseStepper::new(noise_gen, None, UNIVERSE_SIZE)),
         Box::new(Buf3dWriter::new(UNIVERSE_SIZE, buf_render)),
     ]);
 }

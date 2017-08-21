@@ -28,7 +28,7 @@ impl<
             .map(|cell| cell.state.get_col()) // fetch the slice of Z `f32`s
             .enumerate() {
             for (z, val) in stack.iter().enumerate() {
-                self.buf[ix + z] = *val;
+                self.buf[(ix * stack.len()) + z] = *val;
             }
         }
 

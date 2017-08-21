@@ -15,12 +15,14 @@ mergeInto(LibraryManager.library, {
       return;
     }
 
-    if(!shadersCompiled) {
+    if(!Module.shadersCompiled) {
       var programInfo = twgl.createProgramInfo(gl, [Module.vs, Module.fs]);
       var bufferInfo = twgl.primitives.createXYQuadBufferInfo(gl);
 
       gl.useProgram(programInfo.program);
       twgl.setBuffersAndAttributes(gl, programInfo, bufferInfo);
+
+      Module.shadersCompiled = true;
     }
 
     // Create the slice looking into Emscripten memory

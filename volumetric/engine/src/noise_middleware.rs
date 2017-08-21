@@ -33,10 +33,10 @@ fn drive_noise<C: CellState + BufColumn>(
 ) {
     for y in 0..universe_size {
         for x in 0..universe_size {
-            let mut column = cells_buf[(y * universe_size) + x].state.get_col_mut();
-            for z in seq..(seq + universe_size) {
+            let column = cells_buf[(y * universe_size) + x].state.get_col_mut();
+            for z in 0..universe_size {
                 // calculate noise value for current coordinate and sequence number
-                let val = noise.get([x as f64 * zoom, y as f64 * zoom, (z as f64) * speed]);
+                let val = noise.get([x as f64 * zoom, y as f64 * zoom, ((z + seq) as f64) * speed]);
 
                 // set the cell's state equal to that value
                 column[z] = val as f32;
@@ -62,6 +62,7 @@ fn resize_universe<
 pub struct NoiseStepper<N: NoiseFn<Point3<f64>>> {
     conf: MasterConf,
     noise: N,
+    universe_size: usize,
 }
 
 impl<
@@ -77,18 +78,19 @@ impl<
        //      self.conf.needs_resize = false;
        //  }
 
-        drive_noise(&mut universe.cells, universe.seq, &self.noise, self.conf.canvas_size, self.conf.zoom, self.conf.speed);
+        drive_noise(&mut universe.cells, universe.seq, &self.noise, self.universe_size, self.conf.zoom, self.conf.speed);
     }
 }
 
 impl<N: NoiseFn<Point3<f64>>> NoiseStepper<N> {
-    pub fn new(noise: N, conf: Option<MasterConf>) -> Self {
+    pub fn new(noise: N, conf: Option<MasterConf>, universe_size: usize) -> Self {
         NoiseStepper {
             conf: match conf {
                 Some(c) => c,
                 None => MasterConf::default(),
             },
             noise,
+            universe_size,
         }
     }
 }

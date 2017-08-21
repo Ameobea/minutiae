@@ -5,23 +5,16 @@
 
 precision highp float;
 precision highp int;
-precision highp isampler3D;
+precision mediump sampler3D;
 
-uniform isampler3D textureData;
+uniform sampler3D textureData;
 
-in vec3 v_texcoord;
+in vec2 fragCoord;
 
 out vec4 color;
 
-void main()
-{
-   /*ivec4 value = texture(textureData, v_texcoord);
-   if( value.x == 0 )
-      color = vec4(1.0, 0.0, 0.0, 1.0);
-   else if( value.x == 1)
-      color = vec4(1.0, 1.0, 0.0, 1.0);
-   else if( value.x < 0 )
-      color = vec4(0.0, 0.0, 1.0, 1.0);
-   else*/
-      color = vec4(1.0,0.0,0.0,1.0);
+void main() {
+   // float value = texture(textureData, coord);
+   float value = texture(textureData, vec3(fragCoord, 0.)).r;
+   color = vec4(value, value, value, 1.);
 }
