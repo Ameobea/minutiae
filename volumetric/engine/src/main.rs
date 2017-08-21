@@ -17,7 +17,7 @@ use minutiae::prelude::*;
 use minutiae::emscripten::EmscriptenDriver;
 use minutiae::engine::serial::SerialEngine;
 use minutiae::engine::iterator::{SerialGridIterator, SerialEntityIterator};
-use noise::Billow;
+use noise::{Billow, NoiseFn, Point3};
 
 extern {
     /// Invokes the external JS function to pass this buffer to WebGL and render it
@@ -113,6 +113,28 @@ impl Generator<CS, ES, MES, CA, EA> for WG {
 // dummy function until `cell_mutator` is deprecated entirely
 pub fn cell_mutator(_: usize, _: &[Cell<CS>]) -> Option<CS> { None }
 
+/// Dummy noise function implementation designed to make testing easier without draining my
+/// laptop's battery with intensive calculations.
+struct DummyNoise {
+    universe_size: usize,
+    zoom: f64,
+    speed: f64,
+}
+
+impl NoiseFn<Point3<f64>> for DummyNoise {
+    fn get(&self, coord: Point3<f64>) -> f64 {
+        let normalized_coord = [coord[0] / self.zoom, coord[1] / self.zoom, coord[2] / self.speed];
+        let fracs = [
+            normalized_coord[0] / (self.universe_size as f64),
+            normalized_coord[1] / (self.universe_size as f64),
+            normalized_coord[2] / (self.universe_size as f64),
+        ];
+
+        let avg_frac = (fracs[0] + fracs[1] + fracs[2]) / 3.;
+        (avg_frac * 2.) - 1.
+    }
+}
+
 pub fn main() {
     // set up the minutiae environment
     let conf = UniverseConf {
@@ -125,7 +147,12 @@ pub fn main() {
     let engine: Box<SerialEngine<CS, ES, MES, CA, EA, SerialGridIterator, SerialEntityIterator<CS, ES>>> = Box::new(OurEngine);
 
     // create a noise generator to be used to populate the buffer
-    let noise_gen = Billow::new();
+    // let noise_gen = Billow::new();
+    let noise_gen = DummyNoise {
+        universe_size: UNIVERSE_SIZE,
+        speed: 0.00758,
+        zoom: 0.0132312,
+    };
 
     driver.init(universe, engine, &mut [
         // Box::new(MinDelay::from_tps(59.97)),
