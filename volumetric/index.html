@@ -5,8 +5,10 @@
     <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
     <title>Volumetric</title>
 
+    <!-- gpu.min.js -->
+    <!-- <script src="https://ameo.link/u/4l8.js" type="text/javascript"></script> -->
     <!-- gpu.js -->
-    <script src="https://ameo.link/u/4l8.js"></script>
+    <script src="https://ameo.link/u/4l9.js" type="text/javascript"></script>
 
     <style>
     body, canvas {
@@ -15,10 +17,123 @@
     </style>
   </head>
   <body>
-    <canvas id='canvas' width='64' height='64'>
+    <canvas id='canvas' width='512' height='512'>
 
     <script type='text/javascript'>
-      var output = [];
+      var canvas = document.getElementById('canvas');
+      var gpu = new GPU({ canvas });
+
+      // create the raymarcher kernel using gpu.js
+      var rayMarcherKernel = gpu.createKernel(function(
+        buf, universeSize, screenRatio, cameraX, cameraY, cameraZ, focalX, focalY, focalZ
+      ) {
+        var maxSteps = 1028 * 24;
+        // number of universe coordinates traversed per step of the raymarch
+        var stepSize = 0.001;
+
+        var x = this.thread.x;
+        var y = this.thread.y;
+        var unitsPerPx = 2 / universeSize;
+
+        // var cameraX = cameraX * 2.0;
+        // var cameraY = cameraY * 2.0;
+        // var cameraZ = cameraZ * 2.0;
+        // var focalX = 1.0;
+        // var focalY = 1.0;
+        // var focalZ = 1.0;
+        var screenRatio = 4.0;
+
+        // calculate the vector from the camera to the focal point
+        var viewX = focalX - cameraX;
+        var viewY = focalY - cameraY;
+        var viewZ = focalZ - cameraZ;
+        // and then calculate its magnitude (distance / magnitude = 1)
+        var viewMag = Math.sqrt((viewX * viewX) + (viewY * viewY) + (viewZ * viewZ));
+        // and normalize the view vector using that magnitude
+        var normViewX = viewX / viewMag;
+        var normViewY = viewY / viewMag;
+        var normViewZ = viewZ / viewMag;
+
+        // calculate the vector perpendicular to the normalized view vector going to the right (X)
+        // this is used to calculate the coordinate of the pixel in the virtual screen
+        var perpRightX = normViewZ;
+        var perpRightY = 0.0;
+        var perpRightZ = -1.0 * normViewX;
+        // then calculate the vector perpendicular to the normalized view vector going upwards (Y)
+        // this is the cross product of the right vector and the `normView` vector.
+        var perpUpX = (normViewY * perpRightZ) - (perpRightY * normViewZ);
+        var perpUpY = (normViewZ * perpRightX) - (perpRightZ * normViewX);
+        var perpUpZ = (normViewX * perpRightY) - (perpRightX * normViewY);
+
+        // calculate coordinates of our pixel within the virtual screen by adding/subtracting the
+        // perpendicular vectors that define the normal plane to the view vector on which the virtual
+        // screen lies.
+        //
+        // screenRatio is how big the screen is in relation to the size of the universe.
+        var xMult = (((x / universeSize) * 2) - 1) * screenRatio;
+        var yMult = (((y / universeSize) * 2) - 1) * screenRatio;
+        var targetX = focalX - (xMult * perpRightX) - (yMult * perpUpX);
+        var targetY = focalY - (xMult * perpRightY) - (yMult * perpUpY);
+        var targetZ = focalZ - (xMult * perpRightZ) - (yMult * perpUpZ);
+
+        // calculate the vector that defines the direction the camera is facing
+        var pixViewVecX = targetX - cameraX;
+        var pixViewVecY = targetY - cameraY;
+        var pixViewVecZ = targetZ - cameraZ;
+
+        // normalize the view vector so that its magnitude is `stepSize`
+        var pixViewMag = Math.sqrt(
+          (pixViewVecX * pixViewVecX) +
+          (pixViewVecY * pixViewVecY) +
+          (pixViewVecZ * pixViewVecZ)
+        ) / stepSize;
+        var stepX = pixViewVecX / pixViewMag;
+        var stepY = pixViewVecY / pixViewMag;
+        var stepZ = pixViewVecZ / pixViewMag;
+
+        // var curX = targetX;
+        // var curY = targetY;
+        // var curZ = targetZ;
+        var curX = cameraX;
+        var curY = cameraY;
+        var curZ = cameraZ;
+
+        var opacity = 0.0;
+        for( var i=0; i < 2048 * 24; i++) {
+          // make sure that we're within the bounds of the universe
+          if(curX >= -1.0 && curX < 1.0 && curY >= -1.0 && curY < 1.0 && curZ >= -1.0 && curZ < 1.0) {
+            // get the index within the 3D buffer
+            // TODO: improve with interpolated values based on fractional coordinates
+            var normalizedX = Math.floor((curX / unitsPerPx) - 1.0);
+            var normalizedY = Math.floor((curY / unitsPerPx) - 1.0);
+            var normalizedZ = Math.floor((curZ / unitsPerPx) - 1.0);
+            var bufIndex = (normalizedY * universeSize * universeSize) + (normalizedX * universeSize) + normalizedZ;
+            // get the value of the coordinate from within the buffer
+            var value = buf[bufIndex];
+            // accumulate the color/intensity value
+            if(value > 0.0) {
+              opacity += (value * 0.003);
+            }
+            // check to see if we've reached opaqueness
+            if(opacity >= 1.0) {
+              opacity = 1.0;
+              break;
+            }
+          }
+
+          // increment the current coordinates by the step
+          curX += stepX;
+          curY += stepY;
+          curZ += stepZ;
+        }
+
+        this.color(opacity, opacity * 0.8, opacity, 1.0); // TODO
+      }, {
+        dimensions: [canvas.width, canvas.width],
+        output: [canvas.width, canvas.width],
+        mode: 'gpu',
+      }).setDimensions([canvas.width, canvas.width])
+        .setGraphical(true);
 
       var Module = {
         preRun: [
@@ -32,7 +147,7 @@
         },
         canvas: document.getElementById('canvas'),
         shadersCompiled: false,
-        gpu, // inject the global gpu.js variable into `Module`
+        rayMarcherKernel, // inject the raymarcher kernel into the `Module` so it can be used by the render function
       };
     </script>
     <script type='text/javascript' src='http://localhost:5000/dist/volumetric.js'></script>

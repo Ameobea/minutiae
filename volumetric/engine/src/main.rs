@@ -17,11 +17,14 @@ use minutiae::prelude::*;
 use minutiae::emscripten::EmscriptenDriver;
 use minutiae::engine::serial::SerialEngine;
 use minutiae::engine::iterator::{SerialGridIterator, SerialEntityIterator};
-use noise::{Billow, NoiseFn, Point3};
+use noise::{Billow, MultiFractal, NoiseFn, RidgedMulti, Point3, RangeFunction};
 
 extern {
     /// Invokes the external JS function to pass this buffer to WebGL and render it
-    pub fn buf_render(ptr: *const f32);
+    pub fn buf_render(
+        ptr: *const f32, screenRatio: f64, cameraX: f64, cameraY: f64, cameraZ: f64,
+        focalX: f64, focalY: f64, focalZ: f64
+    );
     /// Direct line to `console.log` from JS since the simulated `stdout` is dead after `main()` completes
     pub fn js_debug(msg: *const c_char);
     /// Direct line to `console.error` from JS since the simulated `stdout` is dead after `main()` completes
@@ -37,7 +40,13 @@ use engine::*;
 mod entity_driver;
 use entity_driver::*;
 mod noise_middleware;
-use noise_middleware::NoiseStepper;
+use noise_middleware::{MasterConf, NoiseStepper};
+
+/// Wrapper around the JS debug function that accepts a Rust `&str`.
+fn debug(msg: &str) {
+    let c_str = CString::new(msg).unwrap();
+    unsafe { js_debug(c_str.as_ptr()) };
+}
 
 /// Wrapper around the JS error function that accepts a Rust `&str`.
 pub fn error(msg: &str) {
@@ -45,7 +54,10 @@ pub fn error(msg: &str) {
     unsafe { js_error(c_str.as_ptr()) };
 }
 
-const UNIVERSE_SIZE: usize = 64;
+const UNIVERSE_SIZE: usize = 512;
+const CAMERA_COORD: Point3<f64> = [1.5f64, 1.5f64, 1.5f64];
+const FOCAL_CORD: Point3<f64> = [0.0f64, 0.0f64, 0.0f64];
+const SCREEN_RATIO: f64 = 1.0f64;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CS(Vec<f32>); // Psuedo-3d
@@ -121,6 +133,12 @@ struct DummyNoise {
     speed: f64,
 }
 
+struct DummerNoise;
+
+impl NoiseFn<Point3<f64>> for DummerNoise {
+    fn get(&self, _: Point3<f64>) -> f64 { 1.0f64 }
+}
+
 impl NoiseFn<Point3<f64>> for DummyNoise {
     fn get(&self, coord: Point3<f64>) -> f64 {
         let normalized_coord = [coord[0] / self.zoom, coord[1] / self.zoom, coord[2] / self.speed];
@@ -147,16 +165,26 @@ pub fn main() {
     let engine: Box<SerialEngine<CS, ES, MES, CA, EA, SerialGridIterator, SerialEntityIterator<CS, ES>>> = Box::new(OurEngine);
 
     // create a noise generator to be used to populate the buffer
-    // let noise_gen = Billow::new();
-    let noise_gen = DummyNoise {
-        universe_size: UNIVERSE_SIZE,
-        speed: 0.00758,
-        zoom: 0.0132312,
-    };
+    let noise_gen = Billow::new()
+        .set_octaves(4)
+        .set_frequency(1.0)
+        .set_lacunarity(2.0)
+        .set_persistence(0.5);
+    // let noise_gen = DummyNoise {
+    //     universe_size: UNIVERSE_SIZE,
+    //     speed: 0.00758,
+    //     zoom: 0.0132312,
+    // };
+    // let noise_gen = DummerNoise;
 
     driver.init(universe, engine, &mut [
         // Box::new(MinDelay::from_tps(59.97)),
-        Box::new(NoiseStepper::new(noise_gen, None, UNIVERSE_SIZE)),
-        Box::new(Buf3dWriter::new(UNIVERSE_SIZE, buf_render)),
+        Box::new(NoiseStepper::new(noise_gen, Some(MasterConf {
+            canvas_size: UNIVERSE_SIZE,
+            needs_resize: false,
+            speed: 0.00758 * 0.1,
+            zoom: 0.0132312 * 0.1,
+        }), UNIVERSE_SIZE)),
+        Box::new(Buf3dWriter::new(UNIVERSE_SIZE, buf_render, SCREEN_RATIO, CAMERA_COORD, FOCAL_CORD)),
     ]);
 }

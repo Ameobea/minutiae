@@ -8,10 +8,10 @@ use buf3d_middleware::BufColumn;
 
 /// Configuration status and state for the entire backend.
 pub struct MasterConf {
-    needs_resize: bool,
-    canvas_size: usize,
-    zoom: f64,
-    speed: f64,
+    pub needs_resize: bool,
+    pub canvas_size: usize,
+    pub zoom: f64,
+    pub speed: f64,
 }
 
 impl Default for MasterConf {
@@ -72,13 +72,15 @@ impl<
     fn after_render(&mut self, universe: &mut Universe<C, E, M, CA, EA>) {
         // handle any new setting changes before rendering
 
-       // if self.conf.needs_resize {
-       //      // resize the universe if the canvas size changed, matching that size.
-       //      resize_universe(universe, self.conf.canvas_size);
-       //      self.conf.needs_resize = false;
-       //  }
+        // if self.conf.needs_resize {
+        //      // resize the universe if the canvas size changed, matching that size.
+        //      resize_universe(universe, self.conf.canvas_size);
+        //      self.conf.needs_resize = false;
+        //  }
 
-        drive_noise(&mut universe.cells, universe.seq, &self.noise, self.universe_size, self.conf.zoom, self.conf.speed);
+        if universe.seq == 1 || universe.seq % 256 == 0 {
+            drive_noise(&mut universe.cells, universe.seq, &self.noise, self.universe_size, self.conf.zoom, self.conf.speed);
+        }
     }
 }
 
