@@ -17,7 +17,7 @@
     </style>
   </head>
   <body>
-    <canvas id='canvas' width='512' height='512'>
+    <canvas id='canvas' width='128' height='128'>
 
     <script type='text/javascript'>
       var canvas = document.getElementById('canvas');
@@ -41,7 +41,7 @@
         // var focalX = 1.0;
         // var focalY = 1.0;
         // var focalZ = 1.0;
-        var screenRatio = 4.0;
+        var screenRatio = 2.0;
 
         // calculate the vector from the camera to the focal point
         var viewX = focalX - cameraX;
@@ -104,9 +104,9 @@
           if(curX >= -1.0 && curX < 1.0 && curY >= -1.0 && curY < 1.0 && curZ >= -1.0 && curZ < 1.0) {
             // get the index within the 3D buffer
             // TODO: improve with interpolated values based on fractional coordinates
-            var normalizedX = Math.floor((curX / unitsPerPx) - 1.0);
-            var normalizedY = Math.floor((curY / unitsPerPx) - 1.0);
-            var normalizedZ = Math.floor((curZ / unitsPerPx) - 1.0);
+            var normalizedX = Math.floor((curX + 1.0) / unitsPerPx);
+            var normalizedY = Math.floor((curY + 1.0) / unitsPerPx);
+            var normalizedZ = Math.floor((curZ + 1.0) / unitsPerPx);
             var bufIndex = (normalizedY * universeSize * universeSize) + (normalizedX * universeSize) + normalizedZ;
             // get the value of the coordinate from within the buffer
             var value = buf[bufIndex];
@@ -150,6 +150,6 @@
         rayMarcherKernel, // inject the raymarcher kernel into the `Module` so it can be used by the render function
       };
     </script>
-    <script type='text/javascript' src='http://localhost:5000/dist/volumetric.js'></script>
+    <script type='text/javascript' src='dist/volumetric.js'></script>
   </body>
 </html>

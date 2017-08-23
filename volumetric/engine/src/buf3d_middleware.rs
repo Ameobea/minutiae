@@ -38,17 +38,19 @@ impl<
             }
         }
 
-        const STEPS_PER_ORBIT: usize = 128;
-        // pivot the camera around the origin
-        let cur_step = universe.seq % STEPS_PER_ORBIT;
-        let cur_rads = (cur_step as f64 / STEPS_PER_ORBIT as f64) * 2. * f64::consts::PI;
-        let camera_coord = [4., cur_rads.cos() * 4., cur_rads.sin() * 4.];
+        // const STEPS_PER_ORBIT: usize = 128;
+        // // pivot the camera around the origin
+        // let cur_step = universe.seq % STEPS_PER_ORBIT;
+        // let cur_rads = (cur_step as f64 / STEPS_PER_ORBIT as f64) * 2. * f64::consts::PI;
+        // let focal_coord = [4., cur_rads.cos() * 4., cur_rads.sin() * 4.];
+        let camera_coord = self.focal_coord;
+        let focal_coord = [1.0, 0.0, 0.0];
         debug(&format!("Camera coord: {:?}", camera_coord));
 
         // execute the callback with the pointer to the updated buffer
         unsafe { (self.cb)(
             self.buf.as_ptr(), self.screen_ratio, /*self.*/camera_coord[0], /*self.*/camera_coord[1], /*self.*/camera_coord[2],
-            self.focal_coord[0], self.focal_coord[1], self.focal_coord[2]
+            /*self.*/focal_coord[0], /*self.*/focal_coord[1], /*self.*/focal_coord[2]
         ) }
     }
 }

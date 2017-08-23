@@ -17,7 +17,7 @@ use minutiae::prelude::*;
 use minutiae::emscripten::EmscriptenDriver;
 use minutiae::engine::serial::SerialEngine;
 use minutiae::engine::iterator::{SerialGridIterator, SerialEntityIterator};
-use noise::{Billow, MultiFractal, NoiseFn, RidgedMulti, Point3, RangeFunction};
+use noise::{Fbm, Billow, MultiFractal, NoiseFn, RidgedMulti, Point3, RangeFunction};
 
 extern {
     /// Invokes the external JS function to pass this buffer to WebGL and render it
@@ -54,7 +54,7 @@ pub fn error(msg: &str) {
     unsafe { js_error(c_str.as_ptr()) };
 }
 
-const UNIVERSE_SIZE: usize = 512;
+const UNIVERSE_SIZE: usize = 128;
 const CAMERA_COORD: Point3<f64> = [1.5f64, 1.5f64, 1.5f64];
 const FOCAL_CORD: Point3<f64> = [0.0f64, 0.0f64, 0.0f64];
 const SCREEN_RATIO: f64 = 1.0f64;
@@ -165,8 +165,8 @@ pub fn main() {
     let engine: Box<SerialEngine<CS, ES, MES, CA, EA, SerialGridIterator, SerialEntityIterator<CS, ES>>> = Box::new(OurEngine);
 
     // create a noise generator to be used to populate the buffer
-    let noise_gen = Billow::new()
-        .set_octaves(4)
+    let noise_gen = Fbm::new()
+        .set_octaves(3)
         .set_frequency(1.0)
         .set_lacunarity(2.0)
         .set_persistence(0.5);
@@ -182,8 +182,8 @@ pub fn main() {
         Box::new(NoiseStepper::new(noise_gen, Some(MasterConf {
             canvas_size: UNIVERSE_SIZE,
             needs_resize: false,
-            speed: 0.00758 * 0.1,
-            zoom: 0.0132312 * 0.1,
+            speed: 0.00758,
+            zoom: 0.0132312,
         }), UNIVERSE_SIZE)),
         Box::new(Buf3dWriter::new(UNIVERSE_SIZE, buf_render, SCREEN_RATIO, CAMERA_COORD, FOCAL_CORD)),
     ]);

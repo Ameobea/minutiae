@@ -36,7 +36,11 @@ fn drive_noise<C: CellState + BufColumn>(
             let column = cells_buf[(y * universe_size) + x].state.get_col_mut();
             for z in 0..universe_size {
                 // calculate noise value for current coordinate and sequence number
-                let val = noise.get([x as f64 * zoom, y as f64 * zoom, ((z + seq) as f64) * speed]);
+                let val = noise.get([
+                    (x as f64 + (seq as f64 * 5.8)) * zoom,
+                    (y as f64) * zoom,
+                    (z as f64) * speed,
+                ]);
 
                 // set the cell's state equal to that value
                 column[z] = val as f32;
@@ -78,9 +82,9 @@ impl<
         //      self.conf.needs_resize = false;
         //  }
 
-        if universe.seq == 1 || universe.seq % 256 == 0 {
+        // if universe.seq == 1 || universe.seq % 256 == 0 {
             drive_noise(&mut universe.cells, universe.seq, &self.noise, self.universe_size, self.conf.zoom, self.conf.speed);
-        }
+        // }
     }
 }
 
