@@ -17,13 +17,14 @@ use minutiae::prelude::*;
 use minutiae::emscripten::EmscriptenDriver;
 use minutiae::engine::serial::SerialEngine;
 use minutiae::engine::iterator::{SerialGridIterator, SerialEntityIterator};
-use noise::{Fbm, Billow, MultiFractal, NoiseFn, RidgedMulti, Point3, RangeFunction};
+#[allow(unused_imports)]
+use noise::{BasicMulti, Billow, Fbm, MultiFractal, NoiseFn, RidgedMulti, Point3, RangeFunction};
 
 extern {
     /// Invokes the external JS function to pass this buffer to WebGL and render it
     pub fn buf_render(
-        ptr: *const f32, screenRatio: f64, cameraX: f64, cameraY: f64, cameraZ: f64,
-        focalX: f64, focalY: f64, focalZ: f64
+        ptr: *const f32, bufSize: usize, canvasSize: usize,screenRatio: f64, cameraX: f64,
+        cameraY: f64, cameraZ: f64, focalX: f64, focalY: f64, focalZ: f64
     );
     /// Direct line to `console.log` from JS since the simulated `stdout` is dead after `main()` completes
     pub fn js_debug(msg: *const c_char);
@@ -55,6 +56,7 @@ pub fn error(msg: &str) {
 }
 
 const UNIVERSE_SIZE: usize = 128;
+const CANVAS_SIZE: usize = 400;
 const CAMERA_COORD: Point3<f64> = [1.5f64, 1.5f64, 1.5f64];
 const FOCAL_CORD: Point3<f64> = [0.0f64, 0.0f64, 0.0f64];
 const SCREEN_RATIO: f64 = 1.0f64;
@@ -93,11 +95,11 @@ impl EntityAction<CS, ES> for EA {}
 
 struct OurEngine;
 impl SerialEngine<CS, ES, MES, CA, EA, SerialGridIterator, SerialEntityIterator<CS, ES>> for OurEngine {
-    fn iter_cells(&self, cells: &[Cell<CS>]) -> SerialGridIterator {
+    fn iter_cells(&self, _: &[Cell<CS>]) -> SerialGridIterator {
         SerialGridIterator::new(UNIVERSE_SIZE)
     }
 
-    fn iter_entities(&self, entities: &[Vec<Entity<CS, ES, MES>>]) -> SerialEntityIterator<CS, ES> {
+    fn iter_entities(&self, _: &[Vec<Entity<CS, ES, MES>>]) -> SerialEntityIterator<CS, ES> {
         SerialEntityIterator::new(UNIVERSE_SIZE)
     }
 
@@ -127,12 +129,14 @@ pub fn cell_mutator(_: usize, _: &[Cell<CS>]) -> Option<CS> { None }
 
 /// Dummy noise function implementation designed to make testing easier without draining my
 /// laptop's battery with intensive calculations.
+#[allow(dead_code)]
 struct DummyNoise {
     universe_size: usize,
     zoom: f64,
     speed: f64,
 }
 
+#[allow(dead_code)]
 struct DummerNoise;
 
 impl NoiseFn<Point3<f64>> for DummerNoise {
@@ -165,8 +169,8 @@ pub fn main() {
     let engine: Box<SerialEngine<CS, ES, MES, CA, EA, SerialGridIterator, SerialEntityIterator<CS, ES>>> = Box::new(OurEngine);
 
     // create a noise generator to be used to populate the buffer
-    let noise_gen = Fbm::new()
-        .set_octaves(3)
+    let noise_gen = BasicMulti::new()
+        .set_octaves(8)
         .set_frequency(1.0)
         .set_lacunarity(2.0)
         .set_persistence(0.5);
@@ -178,13 +182,12 @@ pub fn main() {
     // let noise_gen = DummerNoise;
 
     driver.init(universe, engine, &mut [
-        // Box::new(MinDelay::from_tps(59.97)),
         Box::new(NoiseStepper::new(noise_gen, Some(MasterConf {
             canvas_size: UNIVERSE_SIZE,
             needs_resize: false,
-            speed: 0.00758,
-            zoom: 0.0132312,
+            speed: 0.00758 * 10.,
+            zoom: 0.0132312 * 10.,
         }), UNIVERSE_SIZE)),
-        Box::new(Buf3dWriter::new(UNIVERSE_SIZE, buf_render, SCREEN_RATIO, CAMERA_COORD, FOCAL_CORD)),
+        Box::new(Buf3dWriter::new(UNIVERSE_SIZE, CANVAS_SIZE, buf_render, SCREEN_RATIO, CAMERA_COORD, FOCAL_CORD)),
     ]);
 }

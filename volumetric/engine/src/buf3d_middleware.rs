@@ -13,10 +13,12 @@ pub trait BufColumn {
     fn get_col_mut(&mut self) -> &mut [f32];
 }
 
-type RenderCb = unsafe extern fn(*const f32, f64, f64, f64, f64, f64, f64, f64);
+type RenderCb = unsafe extern fn(*const f32, usize, usize, f64, f64, f64, f64, f64, f64, f64);
 
 pub struct Buf3dWriter {
     buf: Vec<f32>,
+    canvas_size: usize,
+    universe_size: usize,
     cb: RenderCb,
     screen_ratio: f64,
     camera_coord: Point3<f64>,
@@ -44,24 +46,26 @@ impl<
         // let cur_rads = (cur_step as f64 / STEPS_PER_ORBIT as f64) * 2. * f64::consts::PI;
         // let focal_coord = [4., cur_rads.cos() * 4., cur_rads.sin() * 4.];
         let camera_coord = self.focal_coord;
-        let focal_coord = [1.0, 0.0, 0.0];
-        debug(&format!("Camera coord: {:?}", camera_coord));
+        let focal_coord = [1.0, ((universe.seq % (60 * 4)) as f64) / (60. * 4.), 0.0];
+        debug(&format!("Focal coord: {:?}", focal_coord));
 
         // execute the callback with the pointer to the updated buffer
         unsafe { (self.cb)(
-            self.buf.as_ptr(), self.screen_ratio, /*self.*/camera_coord[0], /*self.*/camera_coord[1], /*self.*/camera_coord[2],
-            /*self.*/focal_coord[0], /*self.*/focal_coord[1], /*self.*/focal_coord[2]
+            self.buf.as_ptr(), self.universe_size, self.canvas_size, self.screen_ratio, camera_coord[0],
+            camera_coord[1], camera_coord[2], focal_coord[0], focal_coord[1], focal_coord[2]
         ) }
     }
 }
 
 impl Buf3dWriter {
     pub fn new(
-        universe_size: usize, cb: RenderCb, screen_ratio: f64, camera_coord: Point3<f64>,
-        focal_coord: Point3<f64>
+        universe_size: usize, canvas_size: usize, cb: RenderCb, screen_ratio: f64,
+        camera_coord: Point3<f64>, focal_coord: Point3<f64>
     ) -> Self {
         Buf3dWriter {
             buf: vec![0.0f32; universe_size * universe_size * universe_size],
+            canvas_size,
+            universe_size,
             cb,
             screen_ratio,
             camera_coord,

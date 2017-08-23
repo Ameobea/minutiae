@@ -76,15 +76,9 @@ impl<
     fn after_render(&mut self, universe: &mut Universe<C, E, M, CA, EA>) {
         // handle any new setting changes before rendering
 
-        // if self.conf.needs_resize {
-        //      // resize the universe if the canvas size changed, matching that size.
-        //      resize_universe(universe, self.conf.canvas_size);
-        //      self.conf.needs_resize = false;
-        //  }
-
-        // if universe.seq == 1 || universe.seq % 256 == 0 {
+        if universe.seq % ((60 * 4) + 1) == 0 || universe.seq == 1 {
             drive_noise(&mut universe.cells, universe.seq, &self.noise, self.universe_size, self.conf.zoom, self.conf.speed);
-        // }
+        }
     }
 }
 
