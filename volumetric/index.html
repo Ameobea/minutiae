@@ -36,14 +36,6 @@
         var y = Math.floor(this.thread.y * bufRatio);
         var unitsPerPx = 2 / ourBufSize;
 
-        // var cameraX = cameraX * 2.0;
-        // var cameraY = cameraY * 2.0;
-        // var cameraZ = cameraZ * 2.0;
-        // var focalX = 1.0;
-        // var focalY = 1.0;
-        // var focalZ = 1.0;
-        var screenRatio = 1.4;
-
         // calculate the vector from the camera to the focal point
         var viewX = focalX - cameraX;
         var viewY = focalY - cameraY;
@@ -92,31 +84,57 @@
         var stepY = pixViewVecY / pixViewMag;
         var stepZ = pixViewVecZ / pixViewMag;
 
-        // var curX = targetX;
-        // var curY = targetY;
-        // var curZ = targetZ;
         var curX = cameraX;
         var curY = cameraY;
         var curZ = cameraZ;
 
+        /**
+         * Calculates a weighted average between two different floating point values with the given weight.
+         * A weight of 0 means `b` will be returned, 1 returns `b`, and 0.5 returns an even average.
+         */
+        // function mix(a, b, weight) {
+        //   return a * (1 - weight) + b * weight;
+        // }
+
         var opacity = 0.0;
-        for( var i=0; i < 512; i++) {
+        for(var i=0; i < 512; i++) {
           // make sure that we're within the bounds of the universe
           if(curX >= -1.0 && curX < 1.0 && curY >= -1.0 && curY < 1.0 && curZ >= -1.0 && curZ < 1.0) {
-            // get the index within the 3D buffer
-            // TODO: improve with interpolated values based on fractional coordinates
+            // get the value from within the 3D buffer by performing trilinear interpolation
+            // NEVERMIND; that's way too much work to do here and we don't make use of all those crazy
+            // var normalizedX = (curX + 1.0) / unitsPerPx;
+            // var normalizedY = (curY + 1.0) / unitsPerPx;
+            // var normalizedZ = (curZ + 1.0) / unitsPerPx;
+            // var floorNormX = Math.floor(normalizedX);
+            // var floorNormY = Math.floor(normalizedY);
+            // var floorNormZ = Math.floor(normalizedZ);
+            // var ceilNormX = floorNormX + 1;
+            // var ceilNormY = floorNormY + 1;
+            // var ceilNormZ = floorNormZ + 1;
+            // var fracNormX = normalizedX - floorNormX;
+            // var fracNormY = normalizedY - floorNormY;
+            // var fracNormZ = normalizedZ - floorNormZ;
+
+            // // calulate the values at all 8 surrounding coordinates
+            // var p111Vol = (fracNormX * fracNormY * fracNormZ);
+            // var p111Val = p111Vol * buf[(ceilNormY * ourBufSize * ourBufSize) + (ceilNormX * ourBufSize) + ceilNormZ];
+            // var p011Vol = ((1 - fracNormX) * fracNormY * fracNormZ);
+            // var p011Val = p011Vol * buf[(ceilNormY * ourBufSize * ourBufSize) + (floorNormX * ourBufSize) + ceilNormZ];
+            // var p001Vol =
+
             var normalizedX = Math.floor((curX + 1.0) / unitsPerPx);
             var normalizedY = Math.floor((curY + 1.0) / unitsPerPx);
             var normalizedZ = Math.floor((curZ + 1.0) / unitsPerPx);
+
             var bufIndex = (normalizedY * ourBufSize * ourBufSize) + (normalizedX * ourBufSize) + normalizedZ;
             // get the value of the coordinate from within the buffer
             var value = buf[bufIndex];
             // accumulate the color/intensity value
             if(value > 0.0) {
-              opacity += (value * 0.006);
+              opacity += (value * 0.00692);
             }
             // check to see if we've reached opaqueness
-            if(opacity >= 1.0) {
+            if(opacity >= 1.0 || opacity <= -1.0) {
               opacity = 1.0;
               break;
             }
@@ -128,7 +146,11 @@
           curZ += stepZ;
         }
 
-        this.color(opacity, opacity * 0.8, opacity, 1.0); // TODO
+        if(opacity > 0.222) {
+          this.color(opacity, opacity * 0.8, opacity, 1.0); // TODO
+        } else {
+          this.color(0.0, 0.0, 0.0, 1.0);
+        }
       }, {
         dimensions: [128, 128],
         output: [canvas.width, canvas.width],
