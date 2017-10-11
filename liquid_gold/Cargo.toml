@@ -1,5 +1,5 @@
 [package]
-name = "dancing_particles"
+name = "liquid_gold"
 version = "0.1.0"
 authors = ["Casey Primozic <me@ameo.link>"]
 
@@ -11,3 +11,5 @@ palette = "0.2"
 pcg = { git = "https://github.com/codahale/pcg.git" }
 rand = "*"
 uuid = { version = "0.5.0", features = ["v4"] }
+
+libcomposition = { path = "../../noise-asmjs/libcomposition" }
