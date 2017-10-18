@@ -6,4 +6,15 @@ mergeInto(LibraryManager.library, {
     var imageData = new ImageData(buf, canvas.width, canvas.width);
     ctx.putImageData(imageData, 0, 0);
   },
+   /**
+   * Wrappers around `console.log` and `console.error` that circumvents the emulated stdout so it can be used after main exits
+   */
+  js_debug: function(strPtr) {
+    var string = Module.Pointer_stringify(strPtr);
+    console.log(string);
+  },
+  js_error: function(strPtr) {
+    var string = Module.Pointer_stringify(strPtr);
+    console.error(string);
+  },
 });

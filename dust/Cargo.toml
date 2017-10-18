@@ -1,15 +1,25 @@
 [package]
-name = "liquid_gold"
-version = "0.1.0"
 authors = ["Casey Primozic <me@ameo.link>"]
+name = "dust"
+version = "0.1.0"
 
 [dependencies]
-#minutiae = { version = "0.4.3" }
-minutiae = { path = "../minutiae" }
-noise = { git = "https://github.com/Ameobea/noise-rs.git" }
+num = "0.1.40"
 palette = "0.2"
-pcg = { git = "https://github.com/codahale/pcg.git" }
 rand = "*"
-uuid = { version = "0.5.0", features = ["v4"] }
 
-libcomposition = { path = "../../noise-asmjs/libcomposition" }
+[dependencies.libcomposition]
+path = "../../noise-asmjs/libcomposition"
+
+[dependencies.minutiae]
+path = "../minutiae"
+
+[dependencies.noise]
+git = "https://github.com/Ameobea/noise-rs.git"
+
+[dependencies.pcg]
+git = "https://github.com/codahale/pcg.git"
+
+[dependencies.uuid]
+features = ["v4"]
+version = "0.5.0"
