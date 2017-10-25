@@ -11,6 +11,8 @@ use entity::{EntityState, MutEntityState};
 use action::{CellAction, EntityAction};
 use engine::Engine;
 
+pub mod gif_renderer;
+
 /// Adds some side effect on to the end or beginning of the render cycle
 pub trait Middleware<
     C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, M, CA, EA>

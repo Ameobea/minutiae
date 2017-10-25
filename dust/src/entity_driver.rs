@@ -37,15 +37,15 @@ pub fn entity_driver(
                                 // the range from (-1.0, 1.0)
                                 // -|(x+1)-(y+1)| + 1.0
                                 let mut normalized_diff = (-1.0 * ((shade + 1.0) - (their_shade + 1.0)).abs()) + 1.0;
-                                assert!(normalized_diff >= -1.0 && normalized_diff <= 1.0);
+                                debug_assert!(normalized_diff >= -1.0 && normalized_diff <= 1.0);
                                 let (x_dist, y_dist): (isize, isize) = (entity_x as isize - cur_x as isize, entity_y as isize - cur_y as isize);
 
                                 if x_dist != 0 {
-                                    x_velocity_sum += normalized_diff * (VELOCITY_DISTANCE_FACTOR / (x_dist as f32)) * VELOCITY_SCALE;
+                                    x_velocity_sum += (1.0 - normalized_diff) * (VELOCITY_DISTANCE_FACTOR / (x_dist as f32)) * VELOCITY_SCALE;
                                 }
 
                                 if y_dist != 0 {
-                                    y_velocity_sum += normalized_diff * (VELOCITY_DISTANCE_FACTOR / (y_dist as f32)) * VELOCITY_SCALE;
+                                    y_velocity_sum += (1.0 - normalized_diff) * (VELOCITY_DISTANCE_FACTOR / (y_dist as f32)) * VELOCITY_SCALE;
                                 }
                             },
                             _ => (),

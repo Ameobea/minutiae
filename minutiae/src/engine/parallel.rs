@@ -293,7 +293,7 @@ impl<
             }
 
             // evaluate all pending actions, allowing the engine to handle any conflicts
-            exec_actions(&mut universe, &self_action_buf, &cell_action_buf, &entity_action_buf);
+            exec_actions(&mut universe, &cell_action_buf, &self_action_buf, &entity_action_buf);
 
             // recycle the action buffers to avoid having to re-allocate them later
             unsafe {

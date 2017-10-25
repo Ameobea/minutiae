@@ -8,6 +8,7 @@ use std::os::raw::{c_int, c_void, c_float};
 
 use prelude::*;
 use container::EntityContainer;
+use util::ColorCalculator;
 
 #[allow(non_camel_case_types)]
 type em_callback_func = unsafe extern fn();
@@ -34,8 +35,6 @@ pub fn set_main_loop_callback<F>(callback: F) where F: FnMut() {
         });
     }
 }
-
-type ColorCalculator<C, E, M> = fn(&Cell<C>, &[usize], &EntityContainer<C, E, M>) -> [u8; 4];
 
 /// Driver that integrates with the Emscripten browser event loop API to have the simulation loop automatically managed
 /// by the browser.

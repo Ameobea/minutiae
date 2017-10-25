@@ -7,3 +7,4 @@ expanded.rs
 ir.sh
 testing/
 *.wasm
+.DS_Store

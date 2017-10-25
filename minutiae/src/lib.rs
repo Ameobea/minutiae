@@ -21,6 +21,8 @@ extern crate bincode;
 #[cfg(any(feature = "server", feature = "client"))]
 extern crate flate2;
 
+extern crate gif;
+
 #[cfg(feature = "server")]
 extern crate ws;
 

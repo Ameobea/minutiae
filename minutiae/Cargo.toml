@@ -1,26 +1,49 @@
 [package]
-name = "minutiae"
-version = "0.5.0"
 authors = ["Casey Primozic <me@ameo.link>"]
 description = "Cellular Automata-esque simulation engine involving a 2D universe populated by cells and entities"
-repository = "https://github.com/Ameobea/minutiae"
 homepage = "https://github.com/Ameobea/minutiae"
 keywords = ["simulation", "automata", "engine", "entity"]
 license = "MIT"
+name = "minutiae"
+repository = "https://github.com/Ameobea/minutiae"
+version = "0.6.0"
 
 [dependencies]
-bincode = { version = "0.8.0", optional = true }
-flate2 = { version = "0.2.19", features = ["zlib"], default-features = false, optional = true }
+gif = "0.9.2"
 num_cpus = "1.4.0"
-uuid = { version = "0.5.0", features = ["v4", "serde"] }
-serde = { version = "1.*.*", optional = true }
-serde_derive = { version = "1.*.*", optional = true }
-ws = { version = "0.7.1", optional = true }
+
+[dependencies.bincode]
+optional = true
+version = "0.8.0"
+
+[dependencies.flate2]
+default-features = false
+features = ["zlib"]
+optional = true
+version = "0.2.19"
+
+[dependencies.serde]
+optional = true
+version = "1.*.*"
+
+[dependencies.serde_derive]
+optional = true
+version = "1.*.*"
+
+[dependencies.uuid]
+features = ["v4", "serde"]
+version = "0.5.0"
+
+[dependencies.ws]
+optional = true
+version = "0.7.1"
 
 [features]
-server = ["ws", "serde_support", "bincode", "flate2"]
 client = ["serde_support", "bincode", "flate2"]
 serde_support = ["serde", "serde_derive"]
+server = ["ws", "serde_support", "bincode", "flate2"]
+
+[profile]
 
 [profile.release]
 debug = true

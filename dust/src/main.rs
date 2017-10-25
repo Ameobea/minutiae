@@ -14,17 +14,20 @@ extern crate num;
 
 // extern crate libcomposition;
 
-extern {
-    pub fn canvas_render(ptr: *const u8);
-}
+// extern {
+//     pub fn canvas_render(ptr: *const u8);
+// }
 
 use std::os::raw::c_void;
 
 use minutiae::prelude::*;
 use minutiae::engine::serial::SerialEngine;
+use minutiae::engine::parallel::ParallelEngine;
 use minutiae::engine::iterator::{SerialEntityIterator, SerialGridIterator};
-use minutiae::emscripten::{EmscriptenDriver, CanvasRenderer};
+use minutiae::driver::BasicDriver;
+// use minutiae::emscripten::{EmscriptenDriver, CanvasRenderer};
 use minutiae::driver::middleware::MinDelay;
+use minutiae::driver::middleware::gif_renderer::GifRenderer;
 use noise::*;
 use palette::{FromColor, Hsv, Rgb};
 use pcg::PcgRng;
@@ -39,11 +42,11 @@ mod interop;
 mod composition_def;
 use composition_def::COMPOSITION_DEF;
 
-const UNIVERSE_SIZE: usize = 500;
-const VIEW_DISTANCE: usize = 100;
+const UNIVERSE_SIZE: usize = 300;
+const VIEW_DISTANCE: usize = 10;
 const SPEED: f32 = 0.00758;
 const ZOOM: f32 = 0.00132312;
-const DUST_COUNT: usize = 2000;
+const DUST_COUNT: usize = 60000;
 // normalized shade difference (-1.0, 1.0) * (VELOCITY_DISTANCE_FACTOR/distance) * VELOCITY_SCALE = velocity diff
 const VELOCITY_DISTANCE_FACTOR: f32 = 0.2;
 const VELOCITY_SCALE: f32 = 0.7;
@@ -54,7 +57,7 @@ fn rgb_to_array(rgb: &Rgb) -> [u8; 4] {
 
 /// A vector (in the physics sense) determining the X and Y velocity of a particle.
 /// The values correspond to cells per tick.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Velocity {
     x: f32,
     y: f32,
@@ -78,7 +81,7 @@ impl Velocity {
 
 // minutiae type definitions
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 // These hold the hidden noise values that determine the behavior of the entities.
 pub struct CS {
     noise_val_1: f32,
@@ -87,7 +90,7 @@ pub struct CS {
 
 impl CellState for CS {}
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ES {
     Builder,
     Gem(f32), // f32 is a number from -1 to 1 representing the color of this gem particle
@@ -116,12 +119,14 @@ impl ES {
 pub struct MES {}
 impl MutEntityState for MES {}
 
+#[derive(Debug)]
 pub enum CA {
 
 }
 
 impl CellAction<CS> for CA {}
 
+#[derive(Debug)]
 pub enum EA {
     /// Update the velocity of the entity with the given vector and translate according to the result.
     UpdateVelocities { x: f32, y: f32 }
@@ -136,7 +141,7 @@ pub fn cell_mutator(_: usize, _: &[Cell<CS>]) -> Option<CS> { None }
 /// Creates a new dust particle, initialized with random values
 fn create_dust(rng: &mut PcgRng) -> Entity<CS, ES, MES> {
     let state = ES::Dust {
-        shade: if rng.gen::<bool>() { rng.gen_range(0.4, 1.0) } else { rng.gen_range(-1.0, -0.6) },
+        shade: if rng.gen_range(0, 20) <= 2 { rng.gen_range(0.4, 1.0) } else { rng.gen_range(-1.0, -0.6) },
         velocity: Velocity::new(rng),
     };
     Entity::new(state, MES::default())
@@ -203,14 +208,17 @@ fn main() {
         view_distance: VIEW_DISTANCE,
     };
     let universe = Universe::new(conf, &mut WG, cell_mutator, entity_driver);
-    let engine: Box<SerialEngine<CS, ES, MES, CA, EA, SerialGridIterator, SerialEntityIterator<CS, ES>>> = Box::new(DancerEngine);
-    let driver = EmscriptenDriver;
+    // let engine: Box<SerialEngine<CS, ES, MES, CA, EA, SerialGridIterator, SerialEntityIterator<CS, ES>>> = Box::new(DancerEngine);
+    let engine = Box::new(ParallelEngine::new(SerialGridIterator::new(UNIVERSE_SIZE), Box::new(engine::exec_actions), entity_driver));
+    // let driver = EmscriptenDriver;
+    let driver = BasicDriver;
 
     // construct the noise module from the definition string
     // let (colorfn, noise_module) = libcomposition::util::build_tree_from_def(COMPOSITION_DEF).unwrap();
 
     driver.init(universe, engine, &mut [
         Box::new(MinDelay::from_tps(30.99)),
-        Box::new(CanvasRenderer::new(UNIVERSE_SIZE, get_color, canvas_render))
+        // Box::new(CanvasRenderer::new(UNIVERSE_SIZE, get_color, canvas_render)),
+        Box::new(GifRenderer::new("./output.gif", UNIVERSE_SIZE, get_color)),
     ]);
 }

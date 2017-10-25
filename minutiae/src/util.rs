@@ -4,8 +4,11 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
-use cell::CellState;
+use cell::{Cell, CellState};
+use container::EntityContainer;
 use entity::{Entity, EntityState, MutEntityState};
+
+pub type ColorCalculator<C, E, M> = fn(&Cell<C>, &[usize], &EntityContainer<C, E, M>) -> [u8; 4];
 
 /// Given an index of the universe and the universe's size returns X and Y coordinates.
 pub fn get_coords(index: usize, universe_size: usize) -> (usize, usize) {
