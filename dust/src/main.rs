@@ -47,6 +47,7 @@ const VIEW_DISTANCE: usize = 10;
 const SPEED: f32 = 0.00758;
 const ZOOM: f32 = 0.00132312;
 const DUST_COUNT: usize = 60000;
+const BUILDER_COUNT: usize = 20000;
 // normalized shade difference (-1.0, 1.0) * (VELOCITY_DISTANCE_FACTOR/distance) * VELOCITY_SCALE = velocity diff
 const VELOCITY_DISTANCE_FACTOR: f32 = 0.2;
 const VELOCITY_SCALE: f32 = 0.7;
@@ -100,7 +101,7 @@ pub enum ES {
 impl ES {
     pub fn get_base_color(&self) -> Rgb {
         match self {
-            &ES::Builder => Rgb::new_u8(0, 0, 0),
+            &ES::Builder => Rgb::new_u8(66, 244, 69),
             &ES::Gem(color) => {
                 let hue = (color * 360.0) + 180.0;
                 let hsv_color = Hsv::new(hue.into(), 1.0, 1.0);
@@ -115,9 +116,34 @@ impl ES {
     }
 }
 
-#[derive(Clone, Copy, Default)]
-pub struct MES {}
+#[derive(Clone, Copy)]
+pub struct MES([u8; 4]);
 impl MutEntityState for MES {}
+
+impl Default for MES {
+    fn default() -> Self {
+        MES([0; 4])
+    }
+}
+
+impl MES {
+    fn shift(&mut self, val: u8) {
+        self.0[0] = self.0[1];
+        self.0[1] = self.0[2];
+        self.0[2] = self.0[3];
+        self.0[3] = val;
+    }
+
+    fn shift_replace(self, val: u8) -> Self {
+        let mut new = self.0.clone();
+        new[0] = new[1];
+        new[1] = new[2];
+        new[2] = new[3];
+        new[3] = val;
+
+        MES(new)
+    }
+}
 
 #[derive(Debug)]
 pub enum CA {
@@ -129,7 +155,8 @@ impl CellAction<CS> for CA {}
 #[derive(Debug)]
 pub enum EA {
     /// Update the velocity of the entity with the given vector and translate according to the result.
-    UpdateVelocities { x: f32, y: f32 }
+    UpdateVelocities { x: f32, y: f32 },
+    InvertShade,
 }
 impl EntityAction<CS, ES> for EA {}
 
@@ -161,17 +188,24 @@ impl Generator<CS, ES, MES, CA, EA> for WG {
 
         // randomly distribute some dust entities in the universe, initialized with random starting values
         for i in 0..DUST_COUNT {
-            // keep trying until we find an empty cell
-            // loop {
-                let (x, y) = (rng.gen_range(0, UNIVERSE_SIZE - 1), rng.gen_range(0, UNIVERSE_SIZE - 1));
-                let universe_index = get_index(x, y, UNIVERSE_SIZE);
+            let (x, y) = (rng.gen_range(0, UNIVERSE_SIZE - 1), rng.gen_range(0, UNIVERSE_SIZE - 1));
+            let universe_index = get_index(x, y, UNIVERSE_SIZE);
 
-                if entities[universe_index].len() == 0 {
-                    let dust_particle = create_dust(&mut rng);
-                    entities[universe_index].push(dust_particle);
-                    // break;
-                }
-            // }
+            if entities[universe_index].len() == 0 {
+                let dust_particle = create_dust(&mut rng);
+                entities[universe_index].push(dust_particle);
+            }
+        }
+
+        // spawn some builders as well
+        for i in 0..BUILDER_COUNT {
+            let (x, y) = (rng.gen_range(0, UNIVERSE_SIZE - 1), rng.gen_range(0, UNIVERSE_SIZE - 1));
+            let universe_index = get_index(x, y, UNIVERSE_SIZE);
+
+            if entities[universe_index].len() == 0 {
+                let builder = Entity::new(ES::Builder, MES::default());
+                entities[universe_index].push(builder);
+            }
         }
 
         (cells, entities)

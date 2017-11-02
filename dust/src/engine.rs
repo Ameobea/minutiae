@@ -100,9 +100,10 @@ fn exec_self_action(action: &OwnedAction<CS, ES, CA, EA>, entities: &mut EntityC
                             };
 
                             translate(x_offset, y_offset, entities, entity_index, entity_uuid);
-                        }
+                        },
+                        _ => unreachable!(),
                     }
-                }
+                },
                 _ => {
                     println!("OTHER SELF ACTION TYPE UNHANDLED");
                     unimplemented!()
@@ -113,8 +114,28 @@ fn exec_self_action(action: &OwnedAction<CS, ES, CA, EA>, entities: &mut EntityC
     }
 }
 
-fn exec_entity_action(action: &OwnedAction<CS, ES, CA, EA>) {
-    unimplemented!();
+fn exec_entity_action(action: &OwnedAction<CS, ES, CA, EA>, entities: &mut EntityContainer<CS, ES, MES>) {
+    match action.action {
+        Action::EntityAction{ ref action, target_entity_index, target_uuid } => {
+            match action {
+                &EA::InvertShade => {
+                    let (entity, _) = match entities.get_verify_mut(target_entity_index, target_uuid) {
+                        Some(entity) => entity,
+                        None => {
+                            return; // Entity has been deleted or moved.
+                        },
+                    };
+
+                    match entity.state {
+                        ES::Dust { ref mut shade, .. } => *shade *= -1.0, // invert the shade,
+                        _ => (),
+                    }
+                },
+                _ => unreachable!(),
+            }
+        },
+        _ => unreachable!(),
+    }
 }
 
 pub fn exec_actions(
@@ -123,7 +144,7 @@ pub fn exec_actions(
 ) {
     for cell_action in cell_actions { exec_cell_action(cell_action, &mut universe.cells, &mut universe.entities); }
     for self_action in self_actions { exec_self_action(self_action, &mut universe.entities); }
-    for entity_action in entity_actions { exec_entity_action(entity_action); }
+    for entity_action in entity_actions { exec_entity_action(entity_action, &mut universe.entities); }
 }
 
 impl SerialEngine<CS, ES, MES, CA, EA, SerialGridIterator, SerialEntityIterator<CS, ES>> for DancerEngine {

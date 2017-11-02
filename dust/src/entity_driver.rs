@@ -17,7 +17,108 @@ pub fn entity_driver(
 
     match &entity.state {
         &ES::Builder => {
-            unimplemented!();
+            let mut checked: [bool; 4] = [false; 4];
+            let mut checked_count: u8 = 0;
+
+            let mut mutate_entity = |es: &ES, target_entity_index: usize| {
+                match es {
+                    &ES::Dust{ shade, .. } => {
+                        // dispatch an action to invert this entity's shade
+                        entity_action_executor(EA::InvertShade, target_entity_index, entity.uuid);
+                    },
+                    _ => (),
+                }
+            };
+
+            // check if we're adjascent to any entities
+            fn check_left(
+                entity: &Entity<CS, ES, MES>, entities: &EntityContainer<CS, ES, MES>,
+                checked: &mut [bool; 4], universe_index: usize, mutate_entity: &mut FnMut(&ES, usize)
+            ) {
+                let old: MES = entity.mut_state.get();
+                entity.mut_state.set(old.shift_replace(0));
+
+                let target_universe_index = universe_index - 1;
+                let found_entities = entities.get_entities_at(target_universe_index);
+
+                if universe_index > 0 && found_entities.len() > 0 {
+                    mutate_entity(unsafe { &entities.get(found_entities[0]).state }, found_entities[0]);
+                }
+            };
+
+            fn check_right(
+                entity: &Entity<CS, ES, MES>, entities: &EntityContainer<CS, ES, MES>,
+                checked: &mut [bool; 4], universe_index: usize, mutate_entity: &mut FnMut(&ES, usize)
+            ) {
+                let old: MES = entity.mut_state.get();
+                entity.mut_state.set(old.shift_replace(3));
+
+                if universe_index < (UNIVERSE_SIZE * UNIVERSE_SIZE) {
+                    let target_universe_index = universe_index + 1;
+                    let found_entities = entities.get_entities_at(target_universe_index);
+
+                    if found_entities.len() > 0 {
+                        mutate_entity(unsafe { &entities.get(found_entities[0]).state }, found_entities[0]);
+                    }
+                }
+            };
+
+            fn check_above(
+                entity: &Entity<CS, ES, MES>, entities: &EntityContainer<CS, ES, MES>,
+                checked: &mut [bool; 4], universe_index: usize, mutate_entity: &mut FnMut(&ES, usize)
+            ) {
+                let old: MES = entity.mut_state.get();
+                entity.mut_state.set(old.shift_replace(1));
+
+                if universe_index > UNIVERSE_SIZE {
+                    let target_universe_index = universe_index - UNIVERSE_SIZE;
+                    let found_entities = entities.get_entities_at(target_universe_index);
+
+                    if found_entities.len() > 0 {
+                        mutate_entity(unsafe { &entities.get(found_entities[0]).state }, found_entities[0]);
+                    }
+                }
+            };
+
+            fn check_below(
+                entity: &Entity<CS, ES, MES>, entities: &EntityContainer<CS, ES, MES>,
+                checked: &mut [bool; 4], universe_index: usize, mutate_entity: &mut FnMut(&ES, usize)
+            ) {
+                let old: MES = entity.mut_state.get();
+                entity.mut_state.set(old.shift_replace(2));
+
+                if universe_index < ((UNIVERSE_SIZE * UNIVERSE_SIZE) - UNIVERSE_SIZE) {
+                    let target_universe_index = universe_index + UNIVERSE_SIZE;
+                    let found_entities = entities.get_entities_at(target_universe_index);
+
+                    if found_entities.len() > 0 {
+                        mutate_entity(unsafe { &entities.get(found_entities[0]).state }, found_entities[0]);
+                    }
+                }
+            };
+
+            while checked_count < 4 {
+                let mes_cp: MES = entity.mut_state.get();
+                let sum = mes_cp.0[0] + mes_cp.0[1] + mes_cp.0[2] + mes_cp.0[3];
+                // println!("MES: {:?}", mes_cp.0);
+                let modulo = sum % 4;
+
+                if checked[modulo as usize] {
+                    entity.mut_state.set(mes_cp.shift_replace(if modulo < 4 { modulo + 1 } else { modulo }));
+                    // let move_action = match SelfAction::Translate
+                } else {
+                    checked[modulo as usize] = true;
+                    checked_count += 1;
+
+                    match modulo {
+                        0 => check_left(entity, entities, &mut checked, universe_index, &mut mutate_entity),
+                        1 => check_right(entity, entities, &mut checked, universe_index, &mut mutate_entity),
+                        2 => check_above(entity, entities, &mut checked, universe_index, &mut mutate_entity),
+                        3 => check_below(entity, entities, &mut checked, universe_index, &mut mutate_entity),
+                        _ => unreachable!(),
+                    }
+                }
+            }
         },
         &ES::Dust{ shade, velocity: Velocity { x, y, x_offset, y_offset } } => {
             // Look around us for particles and mutate our velocity according to their color.
