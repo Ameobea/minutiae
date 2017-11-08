@@ -41,16 +41,19 @@ use entity_driver::entity_driver;
 mod interop;
 mod composition_def;
 use composition_def::COMPOSITION_DEF;
+mod tracer_middleware;
+use tracer_middleware::TracerMiddleware;
 
-const UNIVERSE_SIZE: usize = 300;
-const VIEW_DISTANCE: usize = 10;
+const UNIVERSE_SIZE: usize = 1080;
+const VIEW_DISTANCE: usize = 25;
 const SPEED: f32 = 0.00758;
 const ZOOM: f32 = 0.00132312;
-const DUST_COUNT: usize = 60000;
-const BUILDER_COUNT: usize = 20000;
+const DUST_COUNT: usize = 200000;
+const BUILDER_COUNT: usize = 0;
 // normalized shade difference (-1.0, 1.0) * (VELOCITY_DISTANCE_FACTOR/distance) * VELOCITY_SCALE = velocity diff
-const VELOCITY_DISTANCE_FACTOR: f32 = 0.2;
-const VELOCITY_SCALE: f32 = 0.7;
+const VELOCITY_DISTANCE_FACTOR: f32 = 0.6;
+const VELOCITY_SCALE: f32 = 0.1;
+static mut ATTRACTION_FACTOR: f32 = 0.0;
 
 fn rgb_to_array(rgb: &Rgb) -> [u8; 4] {
     [(rgb.red * 255.) as u8, (rgb.green * 255.) as u8, (rgb.blue * 255.) as u8, 255]
@@ -85,7 +88,7 @@ impl Velocity {
 #[derive(Clone, Debug)]
 // These hold the hidden noise values that determine the behavior of the entities.
 pub struct CS {
-    noise_val_1: f32,
+    color: Rgb,
     noise_val_2: f32,
 }
 
@@ -168,7 +171,15 @@ pub fn cell_mutator(_: usize, _: &[Cell<CS>]) -> Option<CS> { None }
 /// Creates a new dust particle, initialized with random values
 fn create_dust(rng: &mut PcgRng) -> Entity<CS, ES, MES> {
     let state = ES::Dust {
-        shade: if rng.gen_range(0, 20) <= 2 { rng.gen_range(0.4, 1.0) } else { rng.gen_range(-1.0, -0.6) },
+        // shade: if rng.gen_range(0, 20) <= 10 { rng.gen_range(0.4, 1.0) } else { rng.gen_range(-1.0, -0.6) },
+        // shade: rng.gen_range(-1.0, 1.0),
+        shade: match rng.gen_range(0, 4) {
+            0 => rng.gen_range(-0.9, -0.8),
+            1 => rng.gen_range(-0.3, -0.2),
+            2 => rng.gen_range(0.4, 0.5),
+            3 => rng.gen_range(0.8, 0.9),
+            _ => unreachable!(),
+        },
         velocity: Velocity::new(rng),
     };
     Entity::new(state, MES::default())
@@ -178,7 +189,7 @@ struct WG;
 impl Generator<CS, ES, MES, CA, EA> for WG {
     fn gen(&mut self, conf: &UniverseConf) -> (Vec<Cell<CS>>, Vec<Vec<Entity<CS, ES, MES>>>) {
         // start with an empty universe
-        let cells = vec![Cell { state: CS { noise_val_1: 0.0, noise_val_2: 0.0 }}; UNIVERSE_SIZE * UNIVERSE_SIZE];
+        let cells = vec![Cell { state: CS { color: Rgb::new_u8(3, 3, 3), noise_val_2: 0.0 }}; UNIVERSE_SIZE * UNIVERSE_SIZE];
         let mut entities: Vec<Vec<Entity<CS, ES, MES>>> = vec![Vec::new(); UNIVERSE_SIZE * UNIVERSE_SIZE];
 
         // create some fast PRNG using "true" RNG
@@ -222,9 +233,7 @@ fn offset_color(base: &Rgb, noise: f32) -> Rgb {
 
 fn get_color(cell: &Cell<CS>, entity_indexes: &[usize], entity_container: &EntityContainer<CS, ES, MES>) -> [u8; 4] {
     let rgb_color = match entity_indexes {
-        &[] => {
-            offset_color(&Rgb::new_u8(3, 3, 3), cell.state.noise_val_1)
-        },
+        &[] => cell.state.color,
         &[.., last_index] => {
             let entity = unsafe { entity_container.get(last_index) };
             let base_color = entity.state.get_base_color();
@@ -254,5 +263,6 @@ fn main() {
         Box::new(MinDelay::from_tps(30.99)),
         // Box::new(CanvasRenderer::new(UNIVERSE_SIZE, get_color, canvas_render)),
         Box::new(GifRenderer::new("./output.gif", UNIVERSE_SIZE, get_color)),
+        Box::new(TracerMiddleware::new(0.5, 0.033, 1)),
     ]);
 }

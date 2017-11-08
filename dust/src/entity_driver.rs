@@ -142,11 +142,29 @@ pub fn entity_driver(
                                 let (x_dist, y_dist): (isize, isize) = (entity_x as isize - cur_x as isize, entity_y as isize - cur_y as isize);
 
                                 if x_dist != 0 {
-                                    x_velocity_sum += (1.0 - normalized_diff) * (VELOCITY_DISTANCE_FACTOR / (x_dist as f32)) * VELOCITY_SCALE;
+                                    // opposites attract
+                                    // x_velocity_sum += (1.0 - normalized_diff) * (VELOCITY_DISTANCE_FACTOR / (x_dist as f32)) * VELOCITY_SCALE;
+
+                                    // same colors attract
+                                    // x_velocity_sum += normalized_diff * (VELOCITY_DISTANCE_FACTOR / (x_dist as f32)) * VELOCITY_SCALE;
+
+                                    // attraction depends on universe's sequence number
+                                    unsafe {
+                                        x_velocity_sum += (ATTRACTION_FACTOR - normalized_diff) * (VELOCITY_DISTANCE_FACTOR / (x_dist as f32)) * VELOCITY_SCALE
+                                    };
                                 }
 
                                 if y_dist != 0 {
-                                    y_velocity_sum += (1.0 - normalized_diff) * (VELOCITY_DISTANCE_FACTOR / (y_dist as f32)) * VELOCITY_SCALE;
+                                    // opposites attract
+                                    // y_velocity_sum += (1.0 - normalized_diff) * (VELOCITY_DISTANCE_FACTOR / (y_dist as f32)) * VELOCITY_SCALE;
+
+                                    // same colors attract
+                                    // y_velocity_sum += normalized_diff * (VELOCITY_DISTANCE_FACTOR / (y_dist as f32)) * VELOCITY_SCALE;
+
+                                    // attraction depends on universe's sequence number
+                                    unsafe {
+                                        y_velocity_sum += (ATTRACTION_FACTOR - normalized_diff) * (VELOCITY_DISTANCE_FACTOR / (y_dist as f32)) * VELOCITY_SCALE
+                                    };
                                 }
                             },
                             _ => (),

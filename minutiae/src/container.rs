@@ -204,6 +204,8 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> EntityContainer<C, E, M
         self.positions[dst_universe_index].push(entity_index);
     }
 
+    /// Creates an iterator over the entities contained within the container with the format
+    /// `(Entity, entity_index, universe_index)`.
     pub fn iter<'a>(&'a self) -> impl Iterator<Item=(&'a Entity<C, E, M>, usize, usize)> {
         self.entities.iter()
             .enumerate()
@@ -212,6 +214,20 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> EntityContainer<C, E, M
                 &EntitySlot::Empty(_) => false,
             }).map(|(entity_index, slot)| match slot {
                 &EntitySlot::Occupied{ref entity, universe_index} => (entity, entity_index, universe_index),
+                _ => unreachable!(),
+            })
+    }
+
+    /// Creates a mutable iterator over the entities contained within the container with the format
+    /// `(Entity, entity_index, universe_index)`.
+    pub fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item=(&'a mut Entity<C, E, M>, usize, usize)> {
+        self.entities.iter_mut()
+            .enumerate()
+            .filter(|&(_, ref slot)| match slot {
+                &&mut EntitySlot::Occupied{entity: _, universe_index: _} => true,
+                &&mut EntitySlot::Empty(_) => false,
+            }).map(|(entity_index, slot)| match slot {
+                &mut EntitySlot::Occupied{ref mut entity, universe_index} => (entity, entity_index, universe_index),
                 _ => unreachable!(),
             })
     }
