@@ -44,16 +44,17 @@ use composition_def::COMPOSITION_DEF;
 mod tracer_middleware;
 use tracer_middleware::TracerMiddleware;
 
-const UNIVERSE_SIZE: usize = 1080;
+const UNIVERSE_SIZE: usize = 300;
 const VIEW_DISTANCE: usize = 25;
 const SPEED: f32 = 0.00758;
 const ZOOM: f32 = 0.00132312;
-const DUST_COUNT: usize = 200000;
+const DUST_COUNT: usize = 10000;
 const BUILDER_COUNT: usize = 0;
 // normalized shade difference (-1.0, 1.0) * (VELOCITY_DISTANCE_FACTOR/distance) * VELOCITY_SCALE = velocity diff
 const VELOCITY_DISTANCE_FACTOR: f32 = 0.6;
 const VELOCITY_SCALE: f32 = 0.1;
 static mut ATTRACTION_FACTOR: f32 = 0.0;
+const COLOR_MODE: usize = 1;
 
 fn rgb_to_array(rgb: &Rgb) -> [u8; 4] {
     [(rgb.red * 255.) as u8, (rgb.green * 255.) as u8, (rgb.blue * 255.) as u8, 255]
@@ -175,8 +176,8 @@ fn create_dust(rng: &mut PcgRng) -> Entity<CS, ES, MES> {
         // shade: rng.gen_range(-1.0, 1.0),
         shade: match rng.gen_range(0, 4) {
             0 => rng.gen_range(-0.9, -0.8),
-            1 => rng.gen_range(-0.3, -0.2),
-            2 => rng.gen_range(0.4, 0.5),
+            1|2 => rng.gen_range(-0.3, -0.2),
+            // 2 => rng.gen_range(0.4, 0.5),
             3 => rng.gen_range(0.8, 0.9),
             _ => unreachable!(),
         },
@@ -236,8 +237,30 @@ fn get_color(cell: &Cell<CS>, entity_indexes: &[usize], entity_container: &Entit
         &[] => cell.state.color,
         &[.., last_index] => {
             let entity = unsafe { entity_container.get(last_index) };
-            let base_color = entity.state.get_base_color();
-            offset_color(&base_color, cell.state.noise_val_2)
+
+            if COLOR_MODE == 0 {
+                // generate color based on the shade of the entity
+                let base_color = entity.state.get_base_color();
+                offset_color(&base_color, cell.state.noise_val_2)
+            } else if COLOR_MODE == 1 {
+                // generate color based on the velocity of the entity
+                match entity.state {
+                    ES::Dust { velocity: Velocity { x, y, .. }, .. } => {
+                        let velocity_sum = x.abs() + y.abs();
+                        let velocity_percent = velocity_sum / 3.0;
+
+                        let hue = (velocity_percent * 360.0) + 180.0;
+                        let hsv_color = Hsv::new(hue.into(), 1.0, 1.0);
+                        Rgb::from_hsv(hsv_color)
+                    },
+                    _ => {
+                        let base_color = entity.state.get_base_color();
+                        offset_color(&base_color, cell.state.noise_val_2)
+                    },
+                }
+            } else {
+                unimplemented!();
+            }
         }
     };
 
