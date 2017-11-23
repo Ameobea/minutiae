@@ -6,54 +6,6 @@ use std::marker::PhantomData;
 use cell::CellState;
 use entity::{Entity, EntityState, MutEntityState};
 
-/// Visits the cells of a universe in a particular order returning the indexes of the cells it visits.
-pub trait GridIterator {
-    fn visit(&mut self) -> Option<usize>;
-}
-
-impl<'a> Iterator for &'a mut GridIterator {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.visit()
-    }
-}
-
-/// Iterates over the size of the universe
-pub struct SerialGridIterator {
-    pub universe_length: usize,
-    pub index: usize,
-    pub done: bool,
-}
-
-impl SerialGridIterator {
-    pub fn new(universe_length: usize) -> SerialGridIterator {
-        SerialGridIterator {
-            universe_length: universe_length,
-            index: 0,
-            done: false,
-        }
-    }
-}
-
-impl GridIterator for SerialGridIterator {
-    fn visit(&mut self) -> Option<usize> {
-        if self.done {
-            self.done = false;
-            self.index = 0;
-        } else {
-            self.index += 1;
-        }
-
-        if self.index < self.universe_length {
-            Some(self.index)
-        } else {
-            self.done = true;
-            None
-        }
-    }
-}
-
 /// Visits the entities of a universe in a particular order, returning the index of the cell the entity inhabits
 /// as well as the index of the entity within that cell (since there can be multiple entities in one cell).
 pub trait EntityIterator<C: CellState, E: EntityState<C>, M: MutEntityState> {

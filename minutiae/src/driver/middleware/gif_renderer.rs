@@ -1,7 +1,6 @@
 /// Creates a GIF image with a new frame create for each tick of the simulation.
 
 use std::fs::File;
-use std::path::Path;
 
 use gif::{Encoder, Frame, Repeat, SetParameter};
 

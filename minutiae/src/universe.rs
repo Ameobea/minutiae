@@ -19,7 +19,6 @@ use action::{CellAction, SelfAction, EntityAction};
 pub struct UniverseConf {
     pub view_distance: usize,
     pub size: usize,
-    pub iter_cells: bool,
 }
 
 impl Default for UniverseConf {
@@ -27,7 +26,6 @@ impl Default for UniverseConf {
         UniverseConf {
             view_distance: 1,
             size: 8000,
-            iter_cells: false,
         }
     }
 }

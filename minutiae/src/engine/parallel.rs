@@ -14,7 +14,6 @@ use entity::{Entity, EntityState, MutEntityState};
 use action::{Action, CellAction, SelfAction, EntityAction, OwnedAction};
 use engine::Engine;
 use container::{EntityContainer, EntitySlot};
-use super::iterator::GridIterator;
 
 type ActionBufs<
     C: CellState + 'static, E: EntityState<C> + 'static, CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static
@@ -28,10 +27,9 @@ pub type ActionExecutor<
 
 pub struct ParallelEngine<
     C: CellState + Send + 'static, E: EntityState<C> + Send + 'static, M: MutEntityState + Send + 'static, CA: CellAction<C> + Send + 'static,
-    EA: EntityAction<C, E> + Send + 'static, CI: GridIterator
+    EA: EntityAction<C, E> + Send + 'static
 > {
     worker_count: usize,
-    grid_iterator: CI,
     // Uses a function trait out of necessity since we have need to do that for the hybrid server.
     exec_actions: ActionExecutor<C, E, M, CA, EA>,
     action_buf_rx: Receiver<ActionBufs<C, E, CA, EA>>,
@@ -62,10 +60,9 @@ unsafe impl<
 
 impl<
     C: CellState + Send, E: EntityState<C> + Send, M: MutEntityState + Send, CA: CellAction<C> + Send,
-    EA: EntityAction<C, E> + Send, CI: GridIterator,
-> ParallelEngine<C, E, M, CA, EA, CI> {
+    EA: EntityAction<C, E> + Send
+> ParallelEngine<C, E, M, CA, EA> {
     pub fn new(
-        grid_iterator: CI,
         exec_actions: ActionExecutor<C, E, M, CA, EA>,
         entity_driver: fn(
             universe_index: usize,
@@ -207,7 +204,6 @@ impl<
 
         ParallelEngine {
             worker_count: cpu_count,
-            grid_iterator,
             exec_actions,
             action_buf_rx,
             wakeup_senders,
@@ -220,26 +216,19 @@ impl<
 
 impl<
     C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static, CA: CellAction<C> + 'static,
-    EA: EntityAction<C, E> + 'static, CI: GridIterator,
-> Engine<C, E, M, CA, EA> for Box<ParallelEngine<C, E, M, CA, EA, CI>> where
+    EA: EntityAction<C, E> + 'static
+> Engine<C, E, M, CA, EA> for Box<ParallelEngine<C, E, M, CA, EA>> where
     C:Send, E:Send, M:Send, CA:Send, EA:Send, CA: ::std::fmt::Debug, EA: ::std::fmt::Debug, C: ::std::fmt::Debug, E: ::std::fmt::Debug
 {
     fn step(&mut self, mut universe: &mut Universe<C, E, M, CA, EA>) {
         let &mut ParallelEngine {
-            ref index, worker_count, ref mut grid_iterator, ref exec_actions, ref action_buf_rx,
-            ref mut wakeup_senders, ref mut recycled_action_bufs, ref mut action_buf_buf
+            ref index, worker_count,
+            ref exec_actions,
+            ref action_buf_rx,
+            ref mut wakeup_senders,
+            ref mut recycled_action_bufs,
+            ref mut action_buf_buf
         } = &mut **self;
-        // iterate over the universe's cells one at a time, applying their state transitions immediately
-        // TODO: Consider parallel processing here
-        if universe.conf.iter_cells {
-            let grid_iterator: &mut GridIterator = grid_iterator;
-            for index in grid_iterator {
-                match (universe.cell_mutator)(index, &universe.cells) {
-                    Some(new_state) => universe.cells[index].state = new_state,
-                    None => (),
-                }
-            }
-        }
 
         // TODO: Look into bullying Rust into letting us do without the `Arc` since that's a Heap allocation plus
         // pointer overhead that has to happen every cycle.

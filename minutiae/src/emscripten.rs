@@ -7,7 +7,6 @@ use std::ptr::{self, null_mut};
 use std::os::raw::{c_int, c_void, c_float};
 
 use prelude::*;
-use container::EntityContainer;
 use util::ColorCalculator;
 
 #[allow(non_camel_case_types)]

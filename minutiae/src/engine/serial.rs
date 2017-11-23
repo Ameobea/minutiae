@@ -2,21 +2,19 @@
 //! engine but doens't take advantage of any possible benifits from things like multithreading.
 
 use universe::Universe;
-use cell::{Cell, CellState};
+use cell::CellState;
 use entity::{Entity, EntityState, MutEntityState};
 use action::{Action, OwnedAction, CellAction, SelfAction, EntityAction};
 
 use super::Engine;
-use super::iterator::{GridIterator, EntityIterator};
+use super::iterator::EntityIterator;
 
 use uuid::Uuid;
 
 pub trait SerialEngine<
     C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>,
-    EA: EntityAction<C, E>, CI: GridIterator, EI: EntityIterator<C, E, M>
+    EA: EntityAction<C, E>, EI: EntityIterator<C, E, M>
 > {
-    fn iter_cells(&self, &[Cell<C>]) -> CI;
-
     fn iter_entities(&self, &[Vec<Entity<C, E, M>>]) -> EI;
 
     fn exec_actions(&self, &mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>]);
@@ -24,24 +22,10 @@ pub trait SerialEngine<
 
 impl<
     C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>,
-    EA: EntityAction<C, E>, CI: GridIterator, EI: EntityIterator<C, E, M>
-> Engine<C, E, M, CA, EA> for Box<SerialEngine<C, E, M, CA, EA, CI, EI>> {
+    EA: EntityAction<C, E>, EI: EntityIterator<C, E, M>
+> Engine<C, E, M, CA, EA> for Box<SerialEngine<C, E, M, CA, EA, EI>> {
     // #[inline(never)]
     fn step<'a>(&'a mut self, mut universe: &'a mut Universe<C, E, M, CA, EA>) {
-        // iterate over the universe's cells one at a time, applying their state transitions immediately
-        if universe.conf.iter_cells {
-            let cell_iterator: &mut GridIterator = &mut self.iter_cells(&universe.cells);
-            // This breaks compilations on Emscripten as of lately, for some reason..... when used with this cell mutator:
-            // pub fn cell_mutator(_: usize, _: &[Cell<CS>]) -> Option<CS> { None }
-            //
-            // for index in cell_iterator {
-            //     match (universe.cell_mutator)(index, &universe.cells) {
-            //         Some(new_state) => universe.cells[index].state = new_state,
-            //         None => (),
-            //     }
-            // }
-        }
-
         // iterate over the universe's entities one at a time, passing their requested actions into the engine's core
         // and applying the results immediately based on its rules
         // TODO: Implement preallocation and preallocation metrics
