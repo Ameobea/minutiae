@@ -1,7 +1,7 @@
 //! Middleware with the purpose of taking the data from universe and converting it into a format that can be
 //! passed into WebGL for volumetric rendering.
 
-use std::f64;
+use std::f32;
 
 use minutiae::prelude::*;
 use noise::Point3;
@@ -13,16 +13,16 @@ pub trait BufColumn {
     fn get_col_mut(&mut self) -> &mut [f32];
 }
 
-type RenderCb = unsafe extern fn(*const f32, usize, usize, f64, f64, f64, f64, f64, f64, f64);
+type RenderCb = unsafe extern fn(*const f32, usize, usize, f32, f32, f32, f32, f32, f32, f32);
 
 pub struct Buf3dWriter {
     buf: Vec<f32>,
     canvas_size: usize,
     universe_size: usize,
     cb: RenderCb,
-    screen_ratio: f64,
-    camera_coord: Point3<f64>,
-    focal_coord: Point3<f64>,
+    screen_ratio: f32,
+    camera_coord: Point3<f32>,
+    focal_coord: Point3<f32>,
 }
 
 impl<
@@ -43,10 +43,10 @@ impl<
         // const STEPS_PER_ORBIT: usize = 128;
         // // pivot the camera around the origin
         // let cur_step = universe.seq % STEPS_PER_ORBIT;
-        // let cur_rads = (cur_step as f64 / STEPS_PER_ORBIT as f64) * 2. * f64::consts::PI;
+        // let cur_rads = (cur_step as f32 / STEPS_PER_ORBIT as f32) * 2. * f32::consts::PI;
         // let focal_coord = [4., cur_rads.cos() * 4., cur_rads.sin() * 4.];
         let camera_coord = self.focal_coord;
-        let focal_coord = [1.0, ((universe.seq % (60 * 4)) as f64) / (60. * 4.), 0.0];
+        let focal_coord = [1.0, ((universe.seq % (60 * 4)) as f32) / (60. * 4.), 0.0];
         debug(&format!("Focal coord: {:?}", focal_coord));
 
         // execute the callback with the pointer to the updated buffer
@@ -59,8 +59,8 @@ impl<
 
 impl Buf3dWriter {
     pub fn new(
-        universe_size: usize, canvas_size: usize, cb: RenderCb, screen_ratio: f64,
-        camera_coord: Point3<f64>, focal_coord: Point3<f64>
+        universe_size: usize, canvas_size: usize, cb: RenderCb, screen_ratio: f32,
+        camera_coord: Point3<f32>, focal_coord: Point3<f32>
     ) -> Self {
         Buf3dWriter {
             buf: vec![0.0f32; universe_size * universe_size * universe_size],

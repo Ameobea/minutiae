@@ -8,3 +8,4 @@ ir.sh
 testing/
 *.wasm
 .DS_Store
+*.log

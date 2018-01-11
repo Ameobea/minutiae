@@ -1,4 +1,5 @@
 cd engine && ./asmjs.sh
 cd ..
 
-cp ./engine/target/asmjs-unknown-emscripten/debug/volumetric.js ./dist
+mkdir -p dist
+cp ./engine/target/asmjs-unknown-emscripten/debug/volumetric.js ./dist/volumetric.js
