@@ -1,0 +1,5 @@
+{
+  "editor.formatOnSave": false,
+  "rust.features": [],
+  "rust.no_default_features": true,
+}

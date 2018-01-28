@@ -1,10 +1,26 @@
 [package]
+authors = ["Casey Primozic <me@ameo.link>"]
 name = "ants"
 version = "0.1.0"
-authors = ["Casey Primozic <me@ameo.link>"]
 
 [dependencies]
-minutiae = { path = "../minutiae" }
-uuid = { version = "0.5.0", features = ["v4"] }
-pcg = { git = "https://github.com/ameobea/pcg.git" }
+itertools = "0.7.6"
+lazy_static = "1.0.0"
 rand = "*"
+
+[dependencies.ketos]
+path = "../ketos"
+
+[dependencies.minutiae]
+path = "../minutiae"
+
+[dependencies.pcg]
+git = "https://github.com/ameobea/pcg.git"
+
+[dependencies.uuid]
+features = ["v4"]
+version = "0.5.1"
+
+[features]
+default = ["wasm"]
+wasm = []

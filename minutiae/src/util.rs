@@ -1,6 +1,7 @@
 //! General-purpose utility functions
 
 use std::collections::HashMap;
+use std::fmt::Debug;
 
 use uuid::Uuid;
 
@@ -9,6 +10,8 @@ use container::EntityContainer;
 use entity::{Entity, EntityState, MutEntityState};
 
 pub type ColorCalculator<C, E, M> = fn(&Cell<C>, &[usize], &EntityContainer<C, E, M>) -> [u8; 4];
+
+pub fn debug<T: Debug>(x: T) -> String { format!("{:?}", x) }
 
 /// Given an index of the universe and the universe's size returns X and Y coordinates.
 pub fn get_coords(index: usize, universe_size: usize) -> (usize, usize) {

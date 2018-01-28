@@ -9,3 +9,4 @@ testing/
 *.wasm
 .DS_Store
 *.log
+ketos

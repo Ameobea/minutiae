@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang='en-us'>
+  <head>
+    <meta charset='utf-8'>
+    <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
+    <title>Ants</title>
+    <style>
+    body {
+      background-color: black;
+    }
+
+    canvas {
+      image-rendering: optimizeSpeed;             /* Older versions of FF          */
+      image-rendering: -moz-crisp-edges;          /* FF 6.0+                       */
+      image-rendering: -webkit-optimize-contrast; /* Safari                        */
+      image-rendering: -o-crisp-edges;            /* OS X & Windows Opera (12.02+) */
+      image-rendering: pixelated;                 /* Awesome future-browsers       */
+      -ms-interpolation-mode: nearest-neighbor;   /* IE                            */
+    }
+    </style>
+  </head>
+  <body>
+    <canvas id='canvas' width='800' height='800'>
+
+    <script type='text/javascript'>
+    var output = [];
+
+      var Module = {
+        preRun: [],
+        postRun: [],
+        print: console.log,
+        printErr: function(text) {
+          if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+          console.error(text);
+        },
+        canvas: (function() {
+          var canvas = document.getElementById('canvas');
+
+          // fill canvas with black to start with so we don't have to copy alpha channel data every tick
+          var ctx = canvas.getContext("2d");
+          ctx.beginPath();
+          ctx.rect(0, 0, canvas.height, canvas.height);
+          ctx.fillStyle = "black";
+          ctx.fill();
+
+          return canvas;
+        })(),
+      };
+    </script>
+    <script type='text/javascript' src='target/wasm32-unknown-emscripten/debug/ants.js'></script>
+  </body>
+</html>
