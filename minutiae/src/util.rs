@@ -30,7 +30,7 @@ pub fn get_index(x: usize, y: usize, universe_size: usize) -> usize {
 
 /// Calculates the manhattan distance between the two provided grid cells
 pub fn manhattan_distance(x1: usize, y1: usize, x2: usize, y2: usize) -> usize {
-    let x_diff = if x1 < x2 { x2 - x2 } else { x1 - x2 };
+    let x_diff = if x1 < x2 { x2 - x1 } else { x1 - x2 };
     let y_diff = if y1 < y2 { y2 - y1 } else { y1 - y2 };
     x_diff + y_diff
 }

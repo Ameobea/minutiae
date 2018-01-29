@@ -1,3 +1,5 @@
-(define (drive_entity a b) (printer a b))
+(println "Beginning execution of entity driver...")
 
-(drive_entity 1 2)
+(translate 1 -1)
+
+(translate -1 1)

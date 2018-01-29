@@ -1,5 +1,7 @@
 extern crate itertools;
 extern crate ketos;
+#[macro_use]
+extern crate lazy_static;
 extern crate minutiae;
 extern crate pcg;
 extern crate rand;
@@ -64,8 +66,26 @@ impl Default for CS {
 
 #[derive(Clone)]
 struct Ant {
-    code: Vec<Code>,
+    code: Vec<Rc<Code>>,
+    context: Context,
     holding: CellContents,
+}
+
+fn get_codes_from_source(context: &Context, src: &str) -> Result<Vec<Rc<Code>>, String> {
+    let lexer = Lexer::new(src, 0);
+    Parser::new(&context, lexer)
+        .parse_exprs()
+        .map_err(debug)?
+        .iter()
+        .map(|v| {
+            println!("VALUE: {:?}", v);
+            compile(&context, v)
+        })
+        .fold_results(Vec::new(), |mut acc, code| {
+            acc.push(Rc::new(code));
+            acc
+        })
+        .map_err(debug)
 }
 
 fn get_ant_restrictions() -> RestrictConfig {
@@ -78,36 +98,40 @@ fn foreign_fn(context: &Context, values: &mut [Value]) -> Result<Value, ketos::E
 }
 
 fn get_ant_global_scope() -> ketos::Scope {
-    let mut global_scope = ketos::scope::GlobalScope::default("ant");
-    global_scope.add_value_with_name("printer", |name| ketos::Value::new_foreign_fn(name, foreign_fn));
+    let global_scope = ketos::scope::GlobalScope::default("ant");
+    global_scope.add_value_with_name("printer", |name| Value::new_foreign_fn(name, foreign_fn));
+    global_scope.add_named_value("UNIVERSE_SIZE", UNIVERSE_SIZE.into());
     return Rc::new(global_scope)
 }
 
 fn get_ant_default_context() -> ketos::Context {
     let scope = get_ant_global_scope();
     let restrictions = get_ant_restrictions();
-    ketos::Context::new(scope, restrictions)
+    let context = ketos::Context::new(scope, restrictions);
+
+    // Fill the context with default items from our "standard library"
+    let std_src = include_str!("./ant_std.lisp");
+    let codes: Vec<Rc<Code>> = get_codes_from_source(&context, std_src)
+        .expect("You've got syntax errors in your standard library!");
+
+    for code in &codes {
+        ketos::exec::execute(&context, Rc::clone(code))
+            .expect("Error while executing standard library code!");
+    }
+
+    context
 }
 
 impl Ant {
     pub fn from_source(src: &str) -> Result<Self, String> {
         let context = get_ant_default_context();
-        let lexer = Lexer::new(src, 0);
-        let mut parser = Parser::new(&context, lexer);
-        let exprs = parser.parse_exprs().map_err(debug)?;
-        let codes = exprs
-            .iter()
-            .map(|v| {
-                println!("VALUE: {:?}", v);
-                compile(&context, v)
-            })
-            .fold_results(Vec::with_capacity(exprs.len()), |mut acc, code| {
-                acc.push(code);
-                acc
-            })
-            .map_err(debug)?;
+        let codes = get_codes_from_source(&context, src)?;
 
-        Ok(Ant { code: codes, holding: CellContents::Empty })
+        Ok(Ant {
+            code: codes,
+            context: get_ant_default_context(),
+            holding: CellContents::Empty,
+        })
     }
 }
 
@@ -227,8 +251,10 @@ fn entity_driver(
     entity_action_executor: &mut FnMut(EA, usize, Uuid)
 ) {
     match entity.state {
-        ES::Ant(Ant { ref code, holding }) => {
-
+        ES::Ant(Ant { ref code, ref context, holding }) => {
+            for c in code {
+                ketos::exec::execute(context, Rc::clone(c));
+            }
         }
     }
 }
@@ -308,9 +334,9 @@ fn init(
 
     driver.init(universe, engine, &mut [
         Box::new(MinDelay::from_tps(59.99)),
-        Box::new(minutiae::driver::middleware::gif_renderer::GifRenderer::new(
-            "./out.gif", UNIVERSE_SIZE, color_calculator
-        )),
+        // Box::new(minutiae::driver::middleware::gif_renderer::GifRenderer::new(
+        //     "./out.gif", UNIVERSE_SIZE, color_calculator
+        // )),
     ]);
 }
 
