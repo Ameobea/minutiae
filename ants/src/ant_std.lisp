@@ -16,7 +16,7 @@
 
 (define (push_self_action action) (
   define __SELF_ACTIONS (
-    concat __SELF_ACTIONS '(action)
+    concat __SELF_ACTIONS `(,action)
   )
 ))
 
@@ -37,4 +37,35 @@
 
 (define (suicide) (
   push_self_action (new Suicide)
+))
+
+;;; Calls the provided lambda with the provided arguments `n` times
+(define (do-n n function :rest args) (
+  if (> n 0) (
+    do
+      (apply function args)
+      (apply do-n (- n 1) function args)
+    )
+  )
+)
+
+(define (partial function :rest rest) (
+  lambda (:rest args) (
+    apply function (concat rest args)
+  )
+))
+
+(define (reduce list reducer :optional acc)(
+  if (> (len list) 0) (
+    reduce (tail list) reducer (reducer acc (first list))
+  )
+  acc
+))
+
+(define (map list function) (
+  reduce list (lambda (acc item) (append acc (function item)))
+))
+
+(define (for-each list function) (
+  reduce list (lambda (acc item) (do (function item) ()))
 ))
