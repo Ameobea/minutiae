@@ -15,28 +15,17 @@
 (define __ENTITY_ACTIONS ())
 
 (define (push_self_action action) (
-  define __SELF_ACTIONS (
-    concat __SELF_ACTIONS `(,action)
-  )
+  define __SELF_ACTIONS (append __SELF_ACTIONS action)
 ))
-
-; Action structs
-
-(struct Translation (
-  (x integer)
-  (y integer)
-))
-
-(struct Suicide ())
 
 ; Action dispatchers
 
 (define (translate x y) (
-  push_self_action (new Translation :x x :y y)
+  push_self_action `("translate" ,x ,y)
 ))
 
 (define (suicide) (
-  push_self_action (new Suicide)
+  push_self_action `("suicide")
 ))
 
 ;;; Calls the provided lambda with the provided arguments `n` times

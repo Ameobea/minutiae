@@ -2,14 +2,11 @@
 
 extern crate itertools;
 extern crate ketos;
-#[macro_use]
-extern crate ketos_derive;
 extern crate minutiae;
 extern crate pcg;
 extern crate rand;
 extern crate uuid;
 
-use std::convert::TryFrom;
 use std::rc::Rc;
 
 use ketos::{Context, GlobalScope, Scope, Value};
@@ -17,8 +14,8 @@ use ketos::compile::compile;
 use ketos::bytecode::Code;
 use ketos::lexer::Lexer;
 use ketos::parser::Parser;
+use ketos::rc_vec::RcVec;
 use ketos::restrict::RestrictConfig;
-use ketos::structs::Struct;
 use itertools::Itertools;
 use minutiae::prelude::*;
 use minutiae::engine::serial::SerialEngine;
@@ -190,25 +187,69 @@ enum EA {
 
 }
 
-impl TryFrom<Value> for EA {
-    type Error = String;
+fn map_value_to_self_action(val: &Value) -> Result<SelfAction<CS, ES, EA>, String> {
+    match val {
+        &Value::List(ref list) => {
+            if list.is_empty() {
+                return Err("The provided action list was empty!".into());
+            }
 
-    fn try_from(val: Value) -> Result<Self, String> {
-        match val {
-            Value::Struct(_struct) => EA::try_from(*_struct),
-            _ => Err(format!("Invalid value type of {} jammed into action buffer.", val.type_name()))
-        }
+            println!("LIST: {:?}", list);
+
+            match &list[0] {
+                &Value::String(ref action_type) => match action_type.as_ref() {
+                    "translate" => {
+                        if list.len() != 3 {
+                            return Err(format!("Invalid amount of arguments provided to translate action: {}", list.len() - 1));
+                        }
+
+                        let arg1: isize = match &list[1] {
+                            &Value::Integer(ref int) => match int.to_isize() {
+                                Some(i) => i,
+                                None => {
+                                    return Err(format!("Integer provided to argument 1 converted into `None`!"))
+                                }
+                            },
+                            _ => {
+                                return Err(format!(
+                                    "Invalid arg type of {} provided to argument 1 of translate action!",
+                                    list[1].type_name()
+                                ));
+                            },
+                        };
+
+                        let arg2: isize = match &list[2] {
+                            &Value::Integer(ref int) => match int.to_isize() {
+                                Some(i) => i,
+                                None => {
+                                    return Err(format!("Integer provided to argument 2 converted into `None`!"))
+                                }
+                            },
+                            _ => {
+                                return Err(format!(
+                                    "Invalid arg type of {} provided to argument 2 of translate action!",
+                                    list[2].type_name()
+                                ));
+                            },
+                        };
+
+                        Ok(SelfAction::Translate(arg1, arg2))
+                    },
+                    _ => Err(format!("Invalid action type of `{}` supplied!", action_type)),
+                },
+                _ => Err(format!("Invalid argument type of {} provided for action identifier!", list[0].type_name()))
+            }
+        },
+        _ => Err(format!("Invalid value type of {} jammed into action buffer.", val.type_name()))
     }
 }
 
-impl TryFrom<(Rc<NameStore>, Struct)> for EA {
-    type Error = String;
+fn map_value_to_cell_action(val: &Value) -> Result<(CA, usize), String> {
+    unimplemented!();
+}
 
-    fn try_from((name_store, _struct_: (Struct)) -> Result<Self, String> {
-        match _struct.def().name() {
-
-        }
-    }
+fn map_value_to_entity_action(val: &Value) -> Result<(EA, usize, Uuid), String> {
+    unimplemented!();
 }
 
 impl EntityAction<CS, ES> for EA {}
@@ -261,6 +302,53 @@ fn reset_action_buffers(context: &Context) {
     scope.add_named_value("__ENTITY_ACTIONS", Value::Unit);
 }
 
+fn get_list_by_name(scope: &Scope, name: &str) -> Result<RcVec<Value>, String> {
+    match scope.get_named_value(name) {
+        Some(buf) => match buf {
+            Value::List(list) => Ok(list),
+            Value::Unit => Ok(RcVec::new(vec![])),
+            _ => {
+                return Err(format!("{} has been changed to an invalid type of {}!", name, buf.type_name()));
+            },
+        }
+        None => {
+            return Err(format!("The variable named {} was deleted!", name));
+        },
+    }
+}
+
+fn process_action_buffers(
+    context: &Context,
+    cell_action_executor: &mut FnMut(CA, usize),
+    self_action_executor: &mut FnMut(SelfAction<CS, ES, EA>),
+    entity_action_executor: &mut FnMut(EA, usize, Uuid)
+) -> Result<(), String> {
+    let scope = context.scope();
+
+    let cell_action_list = get_list_by_name(scope, "__CELL_ACTIONS")?;
+
+    for val in &cell_action_list {
+        let (action, universe_index): (CA, usize) = map_value_to_cell_action(val)?;
+        cell_action_executor(action, universe_index);
+    }
+
+    let self_action_list = get_list_by_name(scope, "__SELF_ACTIONS")?;
+
+    for val in &self_action_list {
+        let action: SelfAction<CS, ES, EA> = map_value_to_self_action(val)?;
+        self_action_executor(action);
+    }
+
+    let entity_action_list = get_list_by_name(scope, "__ENTITY_ACTIONS")?;
+
+    for val in &self_action_list {
+        let (action, entity_index, uuid): (EA, usize, Uuid) = map_value_to_entity_action(val)?;
+        entity_action_executor(action, entity_index, uuid);
+    }
+
+    Ok(())
+}
+
 fn entity_driver(
     universe_index: usize,
     entity: &Entity<CS, ES, MES>,
@@ -272,8 +360,26 @@ fn entity_driver(
 ) {
     match entity.state {
         ES::Ant(Ant { ref code, ref context, holding }) => {
+            reset_action_buffers(context);
+
             for c in code {
-                ketos::exec::execute(context, Rc::clone(c)).expect("Ant code broken.");
+                match ketos::exec::execute(context, Rc::clone(c)) {
+                    Ok(_) => (),
+                    Err(err) => {
+                        println!("Entity script errored: {:?}", err);
+                        return;
+                    },
+                };
+            }
+
+            match process_action_buffers(
+                context,
+                cell_action_executor,
+                self_action_executor,
+                entity_action_executor
+            ) {
+                Ok(()) => (),
+                Err(err) => println!("Error while retrieving action buffers from context: {}", err),
             }
         }
     }
@@ -383,7 +489,7 @@ fn main() {
         size: 800,
         view_distance: 1,
     };
-    let universe = Universe::new(conf, &mut WorldGenerator, cell_mutator, entity_driver);
+    let universe = Universe::new(conf, &mut WorldGenerator, entity_driver);
     let engine: OurSerialEngine = Box::new(AntEngine);
 
     init(universe, engine);

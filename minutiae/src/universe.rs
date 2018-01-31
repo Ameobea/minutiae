@@ -32,8 +32,6 @@ impl Default for UniverseConf {
 
 pub struct Universe<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>> {
     pub conf: UniverseConf,
-    // function for transforming a cell to the next state given itself and an array of its neigbors
-    pub cell_mutator: fn(usize, &[Cell<C>]) -> Option<C>,
     // function that determines the behaviour of entities.
     pub entity_driver: fn(
         universe_index: usize,
@@ -61,7 +59,6 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: 
     pub fn new(
         conf: UniverseConf,
         gen: &mut Generator<C, E, M, CA, EA>,
-        cell_mutator: fn(usize, &[Cell<C>]) -> Option<C>,
         entity_driver: fn(
             universe_index: usize,
             entity: &Entity<C, E, M>,
@@ -77,7 +74,6 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: 
         let universe_size = conf.size;
         let mut universe = Universe {
             conf: conf,
-            cell_mutator: cell_mutator,
             entity_driver: entity_driver,
             seq: 0,
             cells: Vec::new(),
@@ -117,7 +113,6 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: 
 
         Universe {
             conf: UniverseConf::default(),
-            cell_mutator: |_: usize, _: &[Cell<C>]| -> Option<C> { None },
             entity_driver: dummy_driver,
             seq: 0,
             cells: Vec::new(),
