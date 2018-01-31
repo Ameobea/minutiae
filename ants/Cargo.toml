@@ -5,7 +5,7 @@ version = "0.1.0"
 
 [dependencies]
 itertools = "0.7.6"
-lazy_static = "1.0.0"
+ketos_derive = "0.10.0"
 rand = "*"
 
 [dependencies.ketos]

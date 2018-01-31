@@ -1,21 +1,24 @@
+#![feature(try_from)]
+
 extern crate itertools;
 extern crate ketos;
 #[macro_use]
-extern crate lazy_static;
+extern crate ketos_derive;
 extern crate minutiae;
 extern crate pcg;
 extern crate rand;
 extern crate uuid;
 
+use std::convert::TryFrom;
 use std::rc::Rc;
 
-use ketos::{Context, Value};
+use ketos::{Context, GlobalScope, Scope, Value};
 use ketos::compile::compile;
 use ketos::bytecode::Code;
-use ketos::exec::execute;
 use ketos::lexer::Lexer;
 use ketos::parser::Parser;
 use ketos::restrict::RestrictConfig;
+use ketos::structs::Struct;
 use itertools::Itertools;
 use minutiae::prelude::*;
 use minutiae::engine::serial::SerialEngine;
@@ -97,7 +100,7 @@ fn foreign_fn(context: &Context, values: &mut [Value]) -> Result<Value, ketos::E
     Ok(Value::Unit)
 }
 
-fn get_ant_global_scope() -> ketos::Scope {
+fn get_ant_global_scope() -> Scope {
     let global_scope = ketos::scope::GlobalScope::default("ant");
     global_scope.add_value_with_name("printer", |name| Value::new_foreign_fn(name, foreign_fn));
     global_scope.add_named_value("UNIVERSE_SIZE", UNIVERSE_SIZE.into());
@@ -175,14 +178,6 @@ impl Default for MES {
 
 impl MutEntityState for MES {}
 
-fn color_calculator(
-    cell: &Cell<CS>,
-    entity_indexes: &[usize],
-    entity_container: &EntityContainer<CS, ES, MES>
-) -> [u8; 4] {
-    unimplemented!(); // TODO
-}
-
 enum CA {
     LaySearchPheremone, // Deposit a pheremone on the current coordinate indicating that we were here while searching for food
     LayFoundPheremone, // Deposit a pheremone on the current coordinate indicating that we're returning with food
@@ -193,6 +188,27 @@ impl CellAction<CS> for CA {}
 
 enum EA {
 
+}
+
+impl TryFrom<Value> for EA {
+    type Error = String;
+
+    fn try_from(val: Value) -> Result<Self, String> {
+        match val {
+            Value::Struct(_struct) => EA::try_from(*_struct),
+            _ => Err(format!("Invalid value type of {} jammed into action buffer.", val.type_name()))
+        }
+    }
+}
+
+impl TryFrom<(Rc<NameStore>, Struct)> for EA {
+    type Error = String;
+
+    fn try_from((name_store, _struct_: (Struct)) -> Result<Self, String> {
+        match _struct.def().name() {
+
+        }
+    }
 }
 
 impl EntityAction<CS, ES> for EA {}
@@ -238,8 +254,12 @@ impl Generator<CS, ES, MES, CA, EA> for WorldGenerator {
     }
 }
 
-/// No-op cell mutator since we aren't mutating cells in this simulation
-fn cell_mutator(_: usize, _: &[Cell<CS>]) -> Option<CS> { None }
+fn reset_action_buffers(context: &Context) {
+    let scope: &GlobalScope = context.scope();
+    scope.add_named_value("__CELL_ACTIONS", Value::Unit);
+    scope.add_named_value("__SELF_ACTIONS", Value::Unit);
+    scope.add_named_value("__ENTITY_ACTIONS", Value::Unit);
+}
 
 fn entity_driver(
     universe_index: usize,
@@ -253,7 +273,7 @@ fn entity_driver(
     match entity.state {
         ES::Ant(Ant { ref code, ref context, holding }) => {
             for c in code {
-                ketos::exec::execute(context, Rc::clone(c));
+                ketos::exec::execute(context, Rc::clone(c)).expect("Ant code broken.");
             }
         }
     }
@@ -302,13 +322,31 @@ impl SerialEngine<CS, ES, MES, CA, EA, SerialEntityIterator<CS, ES>> for AntEngi
     }
 }
 
+type OurSerialEngine = Box<SerialEngine<CS, ES, MES, CA, EA, SerialEntityIterator<CS, ES>>>;
+
 /// Given a coordinate of the universe, uses state of its cell and the entities that reside in it to determine a color
 /// to display on the canvas.  This is called each tick.  The returned value is the color in RGBA.
-fn get_color(cell: &Cell<CS>, entity_indexes: &[usize], entity_container: &EntityContainer<CS, ES, MES>) -> [u8; 4] {
-    unimplemented!(); // TODO
+fn calc_color(
+    cell: &Cell<CS>,
+    entity_indexes: &[usize],
+    entity_container: &EntityContainer<CS, ES, MES>
+) -> [u8; 4] {
+    if !entity_indexes.is_empty() {
+        for i in entity_indexes {
+            match unsafe { &entity_container.get(*i).state } {
+                &ES::Ant { .. } => { return [91, 75, 11, 255] },
+            }
+        }
+        [12, 24, 222, 255]
+    } else {
+        match cell.state.contents {
+            CellContents::Anthill => [222, 233, 244, 255],
+            CellContents::Empty => [12, 12, 12, 255],
+            CellContents::Food(amount) => [200, 30, 40, 255], // TODO: Different colors for different food amounts
+            CellContents::Filled(_) => [230, 230, 230, 255],
+        }
+    }
 }
-
-type OurSerialEngine = Box<SerialEngine<CS, ES, MES, CA, EA, SerialEntityIterator<CS, ES>>>;
 
 #[cfg(feature = "wasm")]
 fn init(
@@ -321,7 +359,7 @@ fn init(
 
     driver.init(universe, engine, &mut [
         Box::new(MinDelay::from_tps(59.99)),
-        Box::new(CanvasRenderer::new(UNIVERSE_SIZE, get_color, canvas_render)),
+        Box::new(CanvasRenderer::new(UNIVERSE_SIZE, calc_color, canvas_render)),
     ]);
 }
 
@@ -334,9 +372,9 @@ fn init(
 
     driver.init(universe, engine, &mut [
         Box::new(MinDelay::from_tps(59.99)),
-        // Box::new(minutiae::driver::middleware::gif_renderer::GifRenderer::new(
-        //     "./out.gif", UNIVERSE_SIZE, color_calculator
-        // )),
+        Box::new(minutiae::driver::middleware::gif_renderer::GifRenderer::new(
+            "./out.gif", UNIVERSE_SIZE, calc_color
+        )),
     ]);
 }
 
