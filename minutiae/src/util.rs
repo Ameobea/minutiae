@@ -136,6 +136,37 @@ pub fn iter_visible(cur_x: usize, cur_y: usize, view_distance: usize, universe_s
     }
 }
 
+pub fn translate_entity<
+    CS: CellState,
+    ES: EntityState<CS>,
+    MES: MutEntityState,
+>(
+    x_offset: isize,
+    y_offset: isize,
+    entities: &mut EntityContainer<CS, ES, MES>,
+    entity_index: usize,
+    entity_uuid: Uuid,
+    universe_size: usize
+) {
+    // this function will return early if the entity has been deleted
+    let universe_index = match entities.get_verify(entity_index, entity_uuid) {
+        Some((_, universe_index)) => universe_index,
+        None => { return; }, // entity has been deleted, so do nothing.
+    };
+
+    // if this is the entity that we're looking for, check to see if the requested move is in bounds
+    let (cur_x, cur_y) = get_coords(universe_index, universe_size);
+    let new_x = cur_x as isize + x_offset;
+    let new_y = cur_y as isize + y_offset;
+    let dst_universe_index = get_index(new_x as usize, new_y as usize, universe_size);
+
+    // verify that the supplied desination coordinates are in bounds
+    // TODO: verify that the supplied destination coordinates are within ruled bounds of destination
+    if new_x >= 0 && new_x < universe_size as isize && new_y >= 0 && new_y < universe_size as isize {
+        entities.move_entity(entity_index, dst_universe_index);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Color(pub [u8; 3]);

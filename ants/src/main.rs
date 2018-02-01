@@ -7,6 +7,7 @@ extern crate pcg;
 extern crate rand;
 extern crate uuid;
 
+use std::fmt::{self, Debug, Formatter};
 use std::rc::Rc;
 
 use ketos::{Context, GlobalScope, Scope, Value};
@@ -22,7 +23,7 @@ use minutiae::engine::serial::SerialEngine;
 use minutiae::engine::iterator::SerialEntityIterator;
 use minutiae::driver::middleware::MinDelay;
 use minutiae::driver::BasicDriver;
-use minutiae::util::debug;
+use minutiae::util::{debug, translate_entity};
 use pcg::PcgRng;
 use rand::{Rng, SeedableRng};
 use uuid::Uuid;
@@ -32,7 +33,7 @@ extern {
     pub fn canvas_render(pixbuf_ptr: *const u8);
 }
 
-const UNIVERSE_SIZE: usize = 800;
+const UNIVERSE_SIZE: usize = 80;
 const ANT_COUNT: usize = 17;
 const FOOD_DEPOSIT_COUNT: usize = 25;
 const FOOD_DEPOSIT_SIZE: usize = 76;
@@ -43,7 +44,7 @@ const ANT_FOOD_CAPACITY: usize = 12;
 
 const UNIVERSE_LENGTH: usize = UNIVERSE_SIZE * UNIVERSE_SIZE;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum CellContents {
     Empty,
     Filled(u8),
@@ -51,7 +52,7 @@ enum CellContents {
     Anthill,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct CS {
     contents: CellContents,
 }
@@ -69,6 +70,25 @@ struct Ant {
     code: Vec<Rc<Code>>,
     context: Context,
     holding: CellContents,
+}
+
+impl Ant {
+    pub fn from_source(src: &str) -> Result<Self, String> {
+        let context = get_ant_default_context();
+        let codes = get_codes_from_source(&context, src)?;
+
+        Ok(Ant {
+            code: codes,
+            context: context,
+            holding: CellContents::Empty,
+        })
+    }
+}
+
+impl Debug for Ant {
+    fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error> {
+        write!(formatter, "Ant {{ code: {:?}, context: {{..}}, holding: {:?} }}", self.code, self.holding)
+    }
 }
 
 fn get_codes_from_source(context: &Context, src: &str) -> Result<Vec<Rc<Code>>, String> {
@@ -122,19 +142,6 @@ fn get_ant_default_context() -> ketos::Context {
     context
 }
 
-impl Ant {
-    pub fn from_source(src: &str) -> Result<Self, String> {
-        let context = get_ant_default_context();
-        let codes = get_codes_from_source(&context, src)?;
-
-        Ok(Ant {
-            code: codes,
-            context: get_ant_default_context(),
-            holding: CellContents::Empty,
-        })
-    }
-}
-
 impl<'a> From<&'a ES> for Option<&'a Ant> {
     fn from(entity_state: &'a ES) -> Self {
         match entity_state {
@@ -151,7 +158,7 @@ impl<'a> From<&'a mut ES> for Option<&'a mut Ant> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum ES {
     Ant(Ant),
 }
@@ -183,6 +190,7 @@ enum CA {
 
 impl CellAction<CS> for CA {}
 
+#[derive(Debug)]
 enum EA {
 
 }
@@ -233,7 +241,9 @@ fn map_value_to_self_action(val: &Value) -> Result<SelfAction<CS, ES, EA>, Strin
                             },
                         };
 
-                        Ok(SelfAction::Translate(arg1, arg2))
+                        let action = SelfAction::Translate(arg1, arg2);
+                        println!("GENERATED TRANSLATE ACTION: {:?}", action);
+                        Ok(action)
                     },
                     _ => Err(format!("Invalid action type of `{}` supplied!", action_type)),
                 },
@@ -295,11 +305,12 @@ impl Generator<CS, ES, MES, CA, EA> for WorldGenerator {
     }
 }
 
-fn reset_action_buffers(context: &Context) {
+fn reset_action_buffers(context: &Context, universe_index: usize) {
     let scope: &GlobalScope = context.scope();
     scope.add_named_value("__CELL_ACTIONS", Value::Unit);
     scope.add_named_value("__SELF_ACTIONS", Value::Unit);
     scope.add_named_value("__ENTITY_ACTIONS", Value::Unit);
+    scope.add_named_value("UNIVERSE_INDEX", Value::Integer(ketos::integer::Integer::from_usize(universe_index)))
 }
 
 fn get_list_by_name(scope: &Scope, name: &str) -> Result<RcVec<Value>, String> {
@@ -341,7 +352,7 @@ fn process_action_buffers(
 
     let entity_action_list = get_list_by_name(scope, "__ENTITY_ACTIONS")?;
 
-    for val in &self_action_list {
+    for val in &entity_action_list {
         let (action, entity_index, uuid): (EA, usize, Uuid) = map_value_to_entity_action(val)?;
         entity_action_executor(action, entity_index, uuid);
     }
@@ -360,11 +371,12 @@ fn entity_driver(
 ) {
     match entity.state {
         ES::Ant(Ant { ref code, ref context, holding }) => {
-            reset_action_buffers(context);
+            reset_action_buffers(context, universe_index);
 
+            let mut val;
             for c in code {
-                match ketos::exec::execute(context, Rc::clone(c)) {
-                    Ok(_) => (),
+                match ketos::exec::execute(context, Rc::clone(&c)) {
+                    Ok(_val) => { val = _val },
                     Err(err) => {
                         println!("Entity script errored: {:?}", err);
                         return;
@@ -381,6 +393,8 @@ fn entity_driver(
                 Ok(()) => (),
                 Err(err) => println!("Error while retrieving action buffers from context: {}", err),
             }
+
+            println!("TICK");
         }
     }
 }
@@ -405,8 +419,22 @@ fn exec_cell_action(
     }
 }
 
-fn exec_self_action(action: &OwnedAction<CS, ES, CA, EA>) {
-    unimplemented!(); // TODO
+fn exec_self_action(
+    universe: &mut Universe<CS, ES, MES, CA, EA>,
+    action: &OwnedAction<CS, ES, CA, EA>
+) {
+    match action.action {
+        Action::SelfAction(SelfAction::Translate(x_offset, y_offset)) => translate_entity(
+            x_offset,
+            y_offset,
+            &mut universe.entities,
+            action.source_entity_index,
+            action.source_uuid,
+            UNIVERSE_SIZE
+        ),
+        Action::EntityAction{ .. } | Action::CellAction{ .. } => unreachable!(),
+         _ => unimplemented!(),
+    }
 }
 
 fn exec_entity_action(action: &OwnedAction<CS, ES, CA, EA>) {
@@ -419,11 +447,14 @@ impl SerialEngine<CS, ES, MES, CA, EA, SerialEntityIterator<CS, ES>> for AntEngi
     }
 
     fn exec_actions(
-        &self, universe: &mut Universe<CS, ES, MES, CA, EA>, cell_actions: &[OwnedAction<CS, ES, CA, EA>],
-        self_actions: &[OwnedAction<CS, ES, CA, EA>], entity_actions: &[OwnedAction<CS, ES, CA, EA>]
+        &self,
+        universe: &mut Universe<CS, ES, MES, CA, EA>,
+        cell_actions: &[OwnedAction<CS, ES, CA, EA>],
+        self_actions: &[OwnedAction<CS, ES, CA, EA>],
+        entity_actions: &[OwnedAction<CS, ES, CA, EA>]
     ) {
         for cell_action in cell_actions { exec_cell_action(cell_action, &mut universe.cells, &mut universe.entities); }
-        for self_action in self_actions { exec_self_action(self_action); }
+        for self_action in self_actions { exec_self_action(universe, self_action); }
         for entity_action in entity_actions { exec_entity_action(entity_action); }
     }
 }
