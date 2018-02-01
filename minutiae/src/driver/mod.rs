@@ -11,19 +11,37 @@ pub mod middleware;
 use self::middleware::Middleware;
 
 pub trait Driver<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, M, CA, EA>
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    U: Universe<C, E, M>,
+    N: Engine<C, E, M, CA, EA, U>,
 > {
-    fn init(self, universe: Universe<C, E, M, CA, EA>, N, &mut [Box<Middleware<C, E, M, CA, EA, N>>]);
+    fn init(self, universe: U, N, &mut [Box<Middleware<C, E, M, CA, EA, U, N>>]);
 }
 
 /// Simplest implementation of a `Driver`.  Starts an infinite loop that steps the simulation's engine forever.
 pub struct BasicDriver;
 
 impl<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, M, CA, EA>
-> Driver<C, E, M, CA, EA, N> for BasicDriver {
-    fn init(self, mut universe: Universe<C, E, M, CA, EA>, mut engine: N, middleware: &mut [Box<Middleware<C, E, M, CA, EA, N>>]) {
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    U: Universe<C, E, M>,
+    N: Engine<C, E, M, CA, EA, U>,
+> Driver<C, E, M, CA, EA, U, N> for BasicDriver {
+    fn init(
+        self,
+        mut universe: U,
+        mut engine: N,
+        middleware: &mut [Box<Middleware<C, E, M, CA, EA, U, N>>]
+    ) {
         println!("Starting simulation driver...");
+
         loop {
             for mut m in middleware.iter_mut() {
                 m.before_render(&mut universe);

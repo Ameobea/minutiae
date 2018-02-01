@@ -74,7 +74,11 @@ pub struct EntityContainer<C: CellState, E: EntityState<C>, M: MutEntityState> {
     pub positions: EntityPositions
 }
 
-impl<C: CellState, E: EntityState<C>, M: MutEntityState> EntityContainer<C, E, M> {
+impl<
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState
+> EntityContainer<C, E, M> {
     pub fn new(universe_size: usize) -> Self {
         // a point of `usize::MAX` indicates that the slot is the last available one.
         EntityContainer{

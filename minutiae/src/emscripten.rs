@@ -7,6 +7,7 @@ use std::ptr::{self, null_mut};
 use std::os::raw::{c_int, c_void, c_float};
 
 use prelude::*;
+use universe::Universe2D;
 use util::ColorCalculator;
 
 #[allow(non_camel_case_types)]
@@ -40,13 +41,19 @@ pub fn set_main_loop_callback<F>(callback: F) where F: FnMut() {
 pub struct EmscriptenDriver;
 
 impl<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, G: Engine<C, E, M, CA, EA>
-> Driver<C, E, M, CA, EA, G> for EmscriptenDriver {
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    U: Universe<C, E, M>,
+    N: Engine<C, E, M, CA, EA, U>,
+> Driver<C, E, M, CA, EA, U, N> for EmscriptenDriver {
     fn init(
         self,
-        mut universe: Universe<C, E, M, CA, EA>,
-        mut engine: G,
-        middleware: &mut [Box<Middleware<C, E, M, CA, EA, G>>]
+        mut universe: U,
+        mut engine: N,
+        middleware: &mut [Box<Middleware<C, E, M, CA, EA, U, N>>]
     ) {
         let closure = || {
             for m in middleware.iter_mut() {
@@ -76,9 +83,14 @@ pub struct CanvasRenderer<C: CellState, E: EntityState<C>, M: MutEntityState> {
 }
 
 impl<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, G: Engine<C, E, M, CA, EA>
-> Middleware<C, E, M, CA, EA, G> for CanvasRenderer<C, E, M> {
-    fn after_render(&mut self, universe: &mut Universe<C, E, M, CA, EA>) {
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    N: Engine<C, E, M, CA, EA, Universe2D<C, E, M>>,
+> Middleware<C, E, M, CA, EA, Universe2D<C, E, M>, N> for CanvasRenderer<C, E, M> {
+    fn after_render(&mut self, universe: &mut Universe2D<C, E, M>) {
         // check if the universe size has changed since the last render and, if it has, re-size our pixbuf
         let universe_len = universe.cells.len();
         let expected_pixbuf_size = universe_len * 4;
@@ -95,7 +107,11 @@ impl<
                 ptr::write(
                     dst_ptr,
                     mem::transmute::<[u8; 4], _>(
-                        (self.get_color)(&universe.cells.get_unchecked(universe_index), entities, &universe.entities)
+                        (self.get_color)(
+                            &universe.cells.get_unchecked(universe_index),
+                            entities,
+                            &universe.entities
+                        )
                     )
                 )
             };
@@ -108,7 +124,9 @@ impl<
 
 impl<C: CellState, E: EntityState<C>, M: MutEntityState> CanvasRenderer<C, E, M> {
     pub fn new(
-        universe_size: usize, get_color: ColorCalculator<C, E, M>, canvas_render: unsafe extern fn(ptr: *const u8)
+        universe_size: usize,
+        get_color: ColorCalculator<C, E, M>,
+        canvas_render: unsafe extern fn(ptr: *const u8)
     ) -> Self {
         CanvasRenderer {
             pixbuf: vec![255u8; universe_size * universe_size * 4],

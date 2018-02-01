@@ -8,7 +8,7 @@ use action::{CellAction, EntityAction};
 use cell::CellState;
 use engine::Engine;
 use entity::{EntityState, MutEntityState};
-use universe::Universe;
+use universe::{Universe, Universe2D};
 use util::ColorCalculator;
 use super::Middleware;
 
@@ -19,13 +19,18 @@ pub struct GifRenderer<C: CellState, E: EntityState<C>, M: MutEntityState> {
 }
 
 impl<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, M, CA, EA>
-> Middleware<C, E, M, CA, EA, N> for GifRenderer<C, E, M> {
-    fn after_render(&mut self, universe: &mut Universe<C, E, M, CA, EA>) {
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    N: Engine<C, E, M, CA, EA, Universe2D<C, E, M>>,
+> Middleware<C, E, M, CA, EA, Universe2D<C, E, M>, N> for GifRenderer<C, E, M> {
+    fn after_render(&mut self, universe: &mut Universe2D<C, E, M>) {
         // calculate colors for each of the pixels in the universe and map it into the array format used by `gif`
         let mut pixels: Vec<u8> = Vec::with_capacity(self.universe_size as usize * self.universe_size as usize * 3);
         for i in 0..(self.universe_size as usize * self.universe_size as usize) {
-            let entities = universe.entities.get_entities_at(i);
+            let entities = universe.get_entities().get_entities_at(i);
             let color = (self.colorfn)(&universe.cells[i], entities, &universe.entities);
 
             pixels.push(color[0]);

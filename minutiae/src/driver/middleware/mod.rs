@@ -1,7 +1,7 @@
 //! Declares additions that can be added onto the driver either before or after a render completes.  Enables things like
 //! rendering, state storage, etc.
 
-use std::fmt::Display;
+use std::fmt::Debug;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -15,20 +15,32 @@ pub mod gif_renderer;
 
 /// Adds some side effect on to the end or beginning of the render cycle
 pub trait Middleware<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, M, CA, EA>
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    U: Universe<C, E, M>,
+    N: Engine<C, E, M, CA, EA, U>,
 > {
-    fn after_render(&mut self, _: &mut Universe<C, E, M, CA, EA>) {}
+    fn after_render(&mut self, _: &mut U) {}
 
-    fn before_render(&mut self, _: &mut Universe<C, E, M, CA, EA>) {}
+    fn before_render(&mut self, _: &mut U) {}
 }
 
 
 pub struct UniverseDisplayer {}
 
 impl<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, M, CA, EA>
-> Middleware<C, E, M, CA, EA, N> for UniverseDisplayer where C:Display, E:Display {
-    fn after_render(&mut self, universe: &mut Universe<C, E, M, CA, EA>) {
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    U: Universe<C, E, M> + Debug,
+    N: Engine<C, E, M, CA, EA, U>,
+> Middleware<C, E, M, CA, EA, U, N> for UniverseDisplayer {
+    fn after_render(&mut self, universe: &mut U) {
         println!("{:?}", universe);
     }
 }
@@ -36,9 +48,15 @@ impl<
 pub struct Delay(pub u64);
 
 impl<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, M, CA, EA>
-> Middleware<C, E, M, CA, EA, N> for Delay {
-    fn before_render(&mut self, _: &mut Universe<C, E, M, CA, EA>) {
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    U: Universe<C, E, M>,
+    N: Engine<C, E, M, CA, EA, U>,
+> Middleware<C, E, M, CA, EA, U, N> for Delay {
+    fn before_render(&mut self, _: &mut U) {
         thread::sleep(Duration::from_millis(self.0))
     }
 }
@@ -68,9 +86,15 @@ impl MinDelay {
 }
 
 impl<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, N: Engine<C, E, M, CA, EA>
-> Middleware<C, E, M, CA, EA, N> for MinDelay {
-    fn after_render(&mut self, _: &mut Universe<C, E, M, CA, EA>) {
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    U: Universe<C, E, M>,
+    N: Engine<C, E, M, CA, EA, U>,
+> Middleware<C, E, M, CA, EA, U, N> for MinDelay {
+    fn after_render(&mut self, _: &mut U) {
         let now = Instant::now();
         let time_diff: Duration = now - self.last_tick;
 

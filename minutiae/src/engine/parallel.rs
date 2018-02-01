@@ -8,7 +8,7 @@ use std::thread;
 use num_cpus;
 use uuid::Uuid;
 
-use universe::Universe;
+use universe::{ContiguousUniverse, Universe};
 use cell::{Cell, CellState};
 use entity::{Entity, EntityState, MutEntityState};
 use action::{Action, CellAction, SelfAction, EntityAction, OwnedAction};
@@ -16,22 +16,43 @@ use engine::Engine;
 use container::{EntityContainer, EntitySlot};
 
 type ActionBufs<
-    C: CellState + 'static, E: EntityState<C> + 'static, CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static
-> = (Vec<OwnedAction<C, E, CA, EA>>, usize, Vec<OwnedAction<C, E, CA, EA>>, usize, Vec<OwnedAction<C, E, CA, EA>>, usize,);
+    C: CellState + 'static,
+    E: EntityState<C> + 'static,
+    CA: CellAction<C> + 'static,
+    EA: EntityAction<C, E> + 'static,
+> = (
+    Vec<OwnedAction<C, E, CA, EA>>,
+    usize,
+    Vec<OwnedAction<C, E, CA, EA>>,
+    usize,
+    Vec<OwnedAction<C, E, CA, EA>>,
+    usize,
+);
 
 pub type ActionExecutor<
-    C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static, CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static
+    C: CellState + 'static,
+    E: EntityState<C> + 'static,
+    CA: CellAction<C> + 'static,
+    EA: EntityAction<C, E> + 'static,
+    U: Universe<C, E, MutEntityState + 'static>,
 > = Box<Fn(
-    &mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>]
+    &mut U,
+    &[OwnedAction<C, E, CA, EA>],
+    &[OwnedAction<C, E, CA, EA>],
+    &[OwnedAction<C, E, CA, EA>]
 )>;
 
 pub struct ParallelEngine<
-    C: CellState + Send + 'static, E: EntityState<C> + Send + 'static, M: MutEntityState + Send + 'static, CA: CellAction<C> + Send + 'static,
-    EA: EntityAction<C, E> + Send + 'static
+    C: CellState + Send + 'static,
+    E: EntityState<C> + Send + 'static,
+    M: MutEntityState + Send + 'static,
+    CA: CellAction<C> + Send + 'static,
+    EA: EntityAction<C, E> + Send + 'static,
+    U: Universe<C, E, M> + ContiguousUniverse<C, E, M>,
 > {
     worker_count: usize,
     // Uses a function trait out of necessity since we have need to do that for the hybrid server.
-    exec_actions: ActionExecutor<C, E, M, CA, EA>,
+    exec_actions: ActionExecutor<C, E, CA, EA, U>,
     action_buf_rx: Receiver<ActionBufs<C, E, CA, EA>>,
     wakeup_senders: Vec<SyncSender<WakeupMessage<C, E, M, CA, EA>>>,
     index: Arc<AtomicUsize>,
@@ -54,16 +75,23 @@ pub struct WakeupMessage<
 }
 
 unsafe impl<
-    C: CellState + Send + 'static, E: EntityState<C> + Send + 'static, M: MutEntityState + Send + 'static,
-    CA: CellAction<C> + Send + 'static, EA: EntityAction<C, E> + Send + 'static
+    C: CellState + Send + 'static,
+    E: EntityState<C> + Send + 'static,
+    M: MutEntityState + Send + 'static,
+    CA: CellAction<C> + Send + 'static,
+    EA: EntityAction<C, E> + Send + 'static
 > Send for WakeupMessage<C, E, M, CA, EA> {}
 
 impl<
-    C: CellState + Send, E: EntityState<C> + Send, M: MutEntityState + Send, CA: CellAction<C> + Send,
-    EA: EntityAction<C, E> + Send
-> ParallelEngine<C, E, M, CA, EA> {
+    C: CellState + Send,
+    E: EntityState<C> + Send,
+    M: MutEntityState + Send,
+    CA: CellAction<C> + Send,
+    EA: EntityAction<C, E> + Send,
+    U: Universe<C, E, M> + ContiguousUniverse<C, E, M>,
+> ParallelEngine<C, E, M, CA, EA, U> {
     pub fn new(
-        exec_actions: ActionExecutor<C, E, M, CA, EA>,
+        exec_actions: ActionExecutor<C, E, CA, EA, U>,
         entity_driver: fn(
             universe_index: usize,
             entity: &Entity<C, E, M>,
@@ -215,12 +243,16 @@ impl<
 }
 
 impl<
-    C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static, CA: CellAction<C> + 'static,
-    EA: EntityAction<C, E> + 'static
-> Engine<C, E, M, CA, EA> for Box<ParallelEngine<C, E, M, CA, EA>> where
+    C: CellState + 'static,
+    E: EntityState<C> + 'static,
+    M: MutEntityState + 'static,
+    CA: CellAction<C> + 'static,
+    EA: EntityAction<C, E> + 'static,
+    U: Universe<C, E, M> + ContiguousUniverse<C, E, M>,
+> Engine<C, E, M, CA, EA, U> for Box<ParallelEngine<C, E, M, CA, EA, U>> where
     C:Send, E:Send, M:Send, CA:Send, EA:Send, CA: ::std::fmt::Debug, EA: ::std::fmt::Debug, C: ::std::fmt::Debug, E: ::std::fmt::Debug
 {
-    fn step(&mut self, mut universe: &mut Universe<C, E, M, CA, EA>) {
+    fn step(&mut self, mut universe: &mut U) {
         let &mut ParallelEngine {
             ref index, worker_count,
             ref exec_actions,
@@ -232,9 +264,9 @@ impl<
 
         // TODO: Look into bullying Rust into letting us do without the `Arc` since that's a Heap allocation plus
         // pointer overhead that has to happen every cycle.
-        let entity_count = universe.entities.entities.len();
-        let cells_ptr = &universe.cells as *const Vec<Cell<C>>;
-        let entities_ptr = &universe.entities as *const EntityContainer<C, E, M>;
+        let entity_count = universe.get_entities().len();
+        let cells_ptr = universe.get_cells() as *const Vec<Cell<C>>;
+        let entities_ptr = universe.get_entities() as *const EntityContainer<C, E, M>;
         // reset current entity count to 0
         index.store(0, Ordering::Relaxed);
 
@@ -295,7 +327,5 @@ impl<
             i += 1;
         }
         debug_assert_eq!(i as usize, worker_count);
-
-        universe.seq += 1;
     }
 }

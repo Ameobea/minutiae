@@ -11,7 +11,14 @@ pub mod serial;
 pub mod parallel;
 pub mod iterator;
 
-pub trait Engine<C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>> {
-    /// The main function of the simulation process.  This is called repeatedly to drive progress in the simulation and
-    fn step(&mut self, &mut Universe<C, E, M, CA, EA>);
+pub trait Engine<
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    U: Universe<C, E, M>
+> {
+    /// The main function of the simulation process.  This is called repeatedly to drive progress in the simulation.
+    fn step(&mut self, &mut U);
 }
