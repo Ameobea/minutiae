@@ -26,7 +26,7 @@ use minutiae::driver::BasicDriver;
 use minutiae::universe::Universe2D;
 use minutiae::util::{debug, translate_entity};
 use pcg::PcgRng;
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 use uuid::Uuid;
 
 #[cfg(feature = "wasm")]
@@ -35,6 +35,7 @@ extern {
 }
 
 const UNIVERSE_SIZE: usize = 80;
+const ANT_COUNT: usize = 20;
 const PRNG_SEED: [u64; 2] = [198918237842, 9];
 
 const UNIVERSE_LENGTH: usize = UNIVERSE_SIZE * UNIVERSE_SIZE;
@@ -257,13 +258,22 @@ struct WorldGenerator;
 
 impl Generator<CS, ES, MES> for WorldGenerator {
     fn gen(&mut self, _conf: &UniverseConf) -> (Vec<Cell<CS>>, Vec<Vec<Entity<CS, ES, MES>>>) {
-        let _rng = PcgRng::from_seed(PRNG_SEED);
+        let mut rng = PcgRng::from_seed(PRNG_SEED);
         let cells = vec![Cell { state: CS::default() }; UNIVERSE_LENGTH];
         let mut entities = vec![Vec::new(); UNIVERSE_LENGTH];
 
         let ant_src = include_str!("./ant.lisp");
         let ant_entity: Entity<CS, ES, MES> = Entity::new(ES::from(Ant::from_source(ant_src).unwrap()), MES::default());
-        entities[0] = vec![ant_entity];
+
+        for _ in 0..ANT_COUNT {
+            loop {
+                let universe_index: usize = rng.gen_range(0, UNIVERSE_LENGTH);
+                if entities[universe_index].is_empty() {
+                    entities[universe_index].push(ant_entity.clone());
+                    break;
+                }
+            }
+        }
 
         (cells, entities)
     }

@@ -5,7 +5,7 @@ authors = ["Casey Primozic <me@ameo.link>"]
 
 [dependencies]
 clippy = { git = "https://github.com/Manishearth/rust-clippy", rev = "75c92aa2d2ccf69e360e13c450b0b0436015ae69", optional = true }
-minutiae = { path = "../../minutiae" }
+minutiae = "0.7.0"
 noise = "0.4.1"
 serde = "1.0.27"
 serde_derive = "1.0.27"
