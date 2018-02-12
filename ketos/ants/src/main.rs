@@ -34,8 +34,8 @@ extern {
     pub fn canvas_render(pixbuf_ptr: *const u8);
 }
 
-const UNIVERSE_SIZE: usize = 80;
-const ANT_COUNT: usize = 20;
+const UNIVERSE_SIZE: usize = 800;
+const ANT_COUNT: usize = 2000;
 const PRNG_SEED: [u64; 2] = [198918237842, 9];
 
 const UNIVERSE_LENGTH: usize = UNIVERSE_SIZE * UNIVERSE_SIZE;
@@ -46,10 +46,7 @@ fn get_codes_from_source(context: &Context, src: &str) -> Result<Vec<Rc<Code>>, 
         .parse_exprs()
         .map_err(debug)?
         .iter()
-        .map(|v| {
-            println!("VALUE: {:?}", v);
-            compile(&context, v)
-        })
+        .map(|v| compile(&context, v))
         .fold_results(Vec::new(), |mut acc, code| {
             acc.push(Rc::new(code));
             acc
@@ -192,8 +189,6 @@ fn map_value_to_self_action(val: &Value) -> Result<SelfAction<CS, ES, EA>, Strin
                 return Err("The provided action list was empty!".into());
             }
 
-            println!("LIST: {:?}", list);
-
             match &list[0] {
                 &Value::String(ref action_type) => match action_type.as_ref() {
                     "translate" => {
@@ -232,7 +227,6 @@ fn map_value_to_self_action(val: &Value) -> Result<SelfAction<CS, ES, EA>, Strin
                         };
 
                         let action = SelfAction::Translate(arg1, arg2);
-                        println!("GENERATED TRANSLATE ACTION: {:?}", action);
                         Ok(action)
                     },
                     _ => Err(format!("Invalid action type of `{}` supplied!", action_type)),
@@ -425,8 +419,6 @@ impl SerialEngine<CS, ES, MES, CA, EA, SerialEntityIterator<CS, ES>, U> for AntE
                     Ok(()) => (),
                     Err(err) => println!("Error while retrieving action buffers from context: {}", err),
                 }
-
-                println!("TICK");
             }
         }
     }

@@ -14,10 +14,7 @@
 ; Action dispatchers
 
 (define (translate x y) (
-  do
-    (print-int "TRANSLATE X" x)
-    (print-int "TRANSLATE Y" y)
-    (push-self-action `("translate" ,x ,y))
+  push-self-action `("translate" ,x ,y)
 ))
 
 (define (suicide) (
