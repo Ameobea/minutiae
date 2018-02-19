@@ -1,14 +1,15 @@
 [package]
-name = "client"
+name = "minutiae-client"
 version = "0.1.0"
 authors = ["Casey Primozic <me@ameo.link>"]
+description = "A "
 
 [dependencies]
-minutiae = { version = "0.4.0", path = "../minutiae", features = ["client"] }
-uuid = { version = "0.5.0", features = ["v4"] }
+minutiae = { version = "0.8.0", path = "../minutiae", features = ["client"] }
+uuid = { version = "0.6.0", features = ["v4"] }
 clippy = {version = "*", optional = true}
-serde = "1.*.*"
-serde_derive = "1.*.*"
+serde = "^1.0.27"
+serde_derive = "^1.0.27"
 
 [features]
 hybrid = []

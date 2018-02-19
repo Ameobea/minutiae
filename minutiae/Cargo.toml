@@ -10,33 +10,33 @@ version = "0.8.0"
 
 [dependencies]
 gif = "0.9.2"
-num_cpus = "1.4.0"
+num_cpus = "1.8.0"
 
 [dependencies.bincode]
 optional = true
-version = "0.8.0"
+version = "1.0.0"
 
 [dependencies.flate2]
 default-features = false
 features = ["zlib"]
 optional = true
-version = "0.2.19"
+version = "1.0.1"
 
 [dependencies.serde]
 optional = true
-version = "1.*.*"
+version = "^1.0.27"
 
 [dependencies.serde_derive]
 optional = true
-version = "1.*.*"
+version = "^1.0.27"
 
 [dependencies.uuid]
 features = ["v4", "serde"]
-version = "0.5.0"
+version = "0.6.0"
 
 [dependencies.ws]
 optional = true
-version = "0.7.1"
+version = "0.7.3"
 
 [features]
 client = ["serde_support", "bincode", "flate2"]
