@@ -99,12 +99,16 @@ pub struct ColorServer<
     C: CellState + 'static,
     E: EntityState<C>,
     M: MutEntityState,
-    X,
+    X: Ord + Copy,
     U: Universe<C, E, M, Coord=X>,
 > {
     pub universe_len: usize,
     pub colors: RwLock<Vec<Color>>,
-    pub color_calculator: fn(&Cell<C>, entity_indexes: &[usize], entity_container: &EntityContainer<C, E, M>) -> Color,
+    pub color_calculator: fn(
+        &Cell<C>,
+        entity_indexes: &[usize],
+        entity_container: &EntityContainer<C, E, M, X>
+    ) -> Color,
     pub seq: Arc<AtomicU32>,
     pub view: Range<X>,
     pub iterator: fn(&U, Range<X>) -> Box<Iterator<Item=(X, Cow<Cell<C>>)>>,
@@ -115,7 +119,7 @@ impl<
     C: CellState + 'static,
     E: EntityState<C>,
     M: MutEntityState,
-    X,
+    X: Ord + Copy,
     U: Universe<C, E, M, Coord=X>,
 > ColorServer<C, E, M, X, U> {
     pub fn new(
@@ -123,7 +127,7 @@ impl<
         color_calculator: fn(
             &Cell<C>,
             entity_indexes: &[usize],
-            entity_container: &EntityContainer<C, E, M>,
+            entity_container: &EntityContainer<C, E, M, X>,
         ) -> Color,
         iterator: fn(&U, Range<X>) -> Box<Iterator<Item=(X, Cow<Cell<C>>)>>,
         default_view: Range<X>,
@@ -146,7 +150,7 @@ impl<
     M: MutEntityState + 'static,
     CA: CellAction<C> + 'static,
     EA: EntityAction<C, E> + 'static,
-    X: Into<usize> + Clone + Copy + 'static,
+    X: Into<usize> + Clone + Copy + Ord + 'static,
     U: Universe<C, E, M, Coord=X> + 'static,
 > ServerLogic<
     C, E, M, CA, EA, ThinServerMessage, ThinClientMessage, U
@@ -157,7 +161,7 @@ impl<
         let mut colors = self.colors.write().expect("Unable to lock colors vector for writing!");
 
         for (coord, cell) in (self.iterator)(universe, self.view.clone()) {
-            let entity_indexes = universe.get_entities().get_entities_at(coord.into());
+            let entity_indexes = universe.get_entities().get_entities_at(coord);
 
             let new_color = (self.color_calculator)(cell.as_ref(), entity_indexes, universe.get_entities());
             let mut last_color = unsafe { colors.get_unchecked_mut(coord.into()) };

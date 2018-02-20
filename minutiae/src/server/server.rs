@@ -214,7 +214,8 @@ impl<
                         // serialize and transmit the messages to the client
                         for msg in msgs {
                             let serialized: Vec<u8> = msg.bin_serialize().expect("Unable to send message to client!");
-                            self.out.send::<&[u8]>(serialized.as_slice().into()); // TODO: Look into handling errors
+                            // TODO: Look into handling errors
+                            self.out.send::<&[u8]>(serialized.as_slice().into()).unwrap();
                         }
                     },
                     None => (),

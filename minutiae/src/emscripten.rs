@@ -76,9 +76,14 @@ impl<
 /// an internal buffer containing that data.  Once all of the data has been calculated, it calls the provided
 /// `canvas_render` function with a pointer to that internal pixeldata buffer in rgba format (the same format
 /// as is accepted by HTML Canvases).
-pub struct CanvasRenderer<C: CellState, E: EntityState<C>, M: MutEntityState> {
+pub struct CanvasRenderer<
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    I: Ord + Copy,
+> {
     pixbuf: Vec<u8>,
-    get_color: ColorCalculator<C, E, M>,
+    get_color: ColorCalculator<C, E, M, I>,
     canvas_render: unsafe extern fn(ptr: *const u8),
 }
 
@@ -89,7 +94,7 @@ impl<
     CA: CellAction<C>,
     EA: EntityAction<C, E>,
     N: Engine<C, E, M, CA, EA, Universe2D<C, E, M>>,
-> Middleware<C, E, M, CA, EA, Universe2D<C, E, M>, N> for CanvasRenderer<C, E, M> {
+> Middleware<C, E, M, CA, EA, Universe2D<C, E, M>, N> for CanvasRenderer<C, E, M, usize> {
     fn after_render(&mut self, universe: &mut Universe2D<C, E, M>) {
         // check if the universe size has changed since the last render and, if it has, re-size our pixbuf
         let universe_len = universe.cells.len();
@@ -122,10 +127,15 @@ impl<
     }
 }
 
-impl<C: CellState, E: EntityState<C>, M: MutEntityState> CanvasRenderer<C, E, M> {
+impl<
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    I: Ord + Copy,
+> CanvasRenderer<C, E, M, I> {
     pub fn new(
         universe_size: usize,
-        get_color: ColorCalculator<C, E, M>,
+        get_color: ColorCalculator<C, E, M, I>,
         canvas_render: unsafe extern fn(ptr: *const u8)
     ) -> Self {
         CanvasRenderer {

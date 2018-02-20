@@ -11,15 +11,25 @@ use cell::CellState;
 
 /// An action that is associated with a particular entity
 #[derive(Debug)]
-pub struct OwnedAction<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>> {
+pub struct OwnedAction<
+    C: CellState,
+    E: EntityState<C>,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    I: Ord,
+> {
     pub source_entity_index: usize,
     pub source_uuid: Uuid,
-    pub action: Action<C, E, CA, EA>,
+    pub action: Action<C, E, CA, EA, I>,
 }
 
 impl<
-    C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>
-> Clone for OwnedAction<C, E, CA, EA> where Action<C, E, CA, EA>:Clone {
+    C: CellState,
+    E: EntityState<C>,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    I: Ord,
+> Clone for OwnedAction<C, E, CA, EA, I> where Action<C, E, CA, EA, I> : Clone {
     fn clone(&self) -> Self {
         OwnedAction {
             source_entity_index: self.source_entity_index,
@@ -31,10 +41,16 @@ impl<
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
-pub enum Action<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>>  {
+pub enum Action<
+    C: CellState,
+    E: EntityState<C>,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    I: Ord,
+>  {
     CellAction {
         action: CA,
-        universe_index: usize,
+        universe_index: I,
     },
     EntityAction {
         action: EA,
@@ -45,12 +61,16 @@ pub enum Action<C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAc
 }
 
 impl<
-    C: CellState, E: EntityState<C>, CA: CellAction<C>, EA: EntityAction<C, E>
-> Clone for Action<C, E, CA, EA> where C:Clone, E:Clone, CA:Clone, EA:Clone, SelfAction<C, E, EA>:Clone {
+    C: CellState + Clone,
+    E: EntityState<C> + Clone,
+    CA: CellAction<C> + Clone,
+    EA: EntityAction<C, E> + Clone,
+    I: Ord + Copy,
+> Clone for Action<C, E, CA, EA, I> where SelfAction<C, E, EA> : Clone {
     fn clone(&self) -> Self {
         match self {
-            &Action::CellAction { ref action, universe_index } =>
-                Action::CellAction { action: action.clone(), universe_index },
+            &Action::CellAction { ref action, ref universe_index } =>
+                Action::CellAction { action: action.clone(), universe_index: *universe_index },
             &Action::EntityAction { ref action, target_entity_index, target_uuid } =>
                 Action::EntityAction { action: action.clone(), target_entity_index, target_uuid },
             &Action::SelfAction(ref action) => Action::SelfAction(action.clone()),
@@ -67,7 +87,11 @@ pub trait EntityAction<C: CellState, E: EntityState<C>> {}
 /// An attempt of an entity to mutate itself.
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
-pub enum SelfAction<C: CellState, E: EntityState<C>, EA: EntityAction<C, E>> {
+pub enum SelfAction<
+    C: CellState,
+    E: EntityState<C>,
+    EA: EntityAction<C, E>,
+> {
     Translate(isize, isize),
     Suicide,
     Custom(EA),
@@ -76,7 +100,9 @@ pub enum SelfAction<C: CellState, E: EntityState<C>, EA: EntityAction<C, E>> {
 }
 
 impl<
-    C: CellState, E: EntityState<C>, EA: EntityAction<C, E>
+    C: CellState,
+    E: EntityState<C>,
+    EA: EntityAction<C, E>,
 > Clone for SelfAction<C, E, EA> where EA:Clone {
     fn clone(&self) -> Self {
         match self {

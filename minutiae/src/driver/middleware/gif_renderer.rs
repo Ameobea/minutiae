@@ -12,10 +12,14 @@ use universe::{Universe, Universe2D};
 use util::ColorCalculator;
 use super::Middleware;
 
-pub struct GifRenderer<C: CellState, E: EntityState<C>, M: MutEntityState> {
+pub struct GifRenderer<
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+> {
     encoder: Encoder<File>,
     universe_size: u16,
-    colorfn: ColorCalculator<C, E, M>,
+    colorfn: ColorCalculator<C, E, M, usize>,
 }
 
 impl<
@@ -44,7 +48,11 @@ impl<
 }
 
 impl<C: CellState, E: EntityState<C>, M: MutEntityState> GifRenderer<C, E, M> {
-    pub fn new(output_path: &str, universe_size: usize, colorfn: ColorCalculator<C, E, M>) -> Self {
+    pub fn new(
+        output_path: &str,
+        universe_size: usize,
+        colorfn: ColorCalculator<C, E, M, usize>,
+    ) -> Self {
         let color_map = &[0xFF, 0xFF, 0xFF, 0, 0, 0];
         let image = File::create(output_path).unwrap();
         let mut encoder = Encoder::new(image, universe_size as u16, universe_size as u16, color_map).unwrap();

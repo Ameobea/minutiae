@@ -9,7 +9,7 @@ use cell::{Cell, CellState};
 use container::EntityContainer;
 use entity::{Entity, EntityState, MutEntityState};
 
-pub type ColorCalculator<C, E, M> = fn(&Cell<C>, &[usize], &EntityContainer<C, E, M>) -> [u8; 4];
+pub type ColorCalculator<C, E, M, I> = fn(&Cell<C>, &[usize], &EntityContainer<C, E, M, I>) -> [u8; 4];
 
 pub fn debug<T: Debug>(x: T) -> String { format!("{:?}", x) }
 
@@ -143,7 +143,7 @@ pub fn translate_entity<
 >(
     x_offset: isize,
     y_offset: isize,
-    entities: &mut EntityContainer<CS, ES, MES>,
+    entities: &mut EntityContainer<CS, ES, MES, usize>,
     entity_index: usize,
     entity_uuid: Uuid,
     universe_size: usize

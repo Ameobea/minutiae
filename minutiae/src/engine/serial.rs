@@ -18,24 +18,25 @@ pub trait SerialEngine<
     CA: CellAction<C>,
     EA: EntityAction<C, E>,
     EI: EntityIterator<C, E, M>,
-    U: Universe<C, E, M> + ContiguousUniverse<C, E, M>,
+    I: Ord + Copy,
+    U: Universe<C, E, M, Coord=I> + ContiguousUniverse<C, E, M>,
 > {
     fn iter_entities(&self, &U) -> EI;
 
     fn exec_actions(
         &self,
         &mut U,
-        &[OwnedAction<C, E, CA, EA>],
-        &[OwnedAction<C, E, CA, EA>],
-        &[OwnedAction<C, E, CA, EA>]
+        &[OwnedAction<C, E, CA, EA, I>],
+        &[OwnedAction<C, E, CA, EA, I>],
+        &[OwnedAction<C, E, CA, EA, I>]
     );
 
     fn drive_entity(
         &mut self,
-        universe_index: usize,
+        universe_index: I,
         entity: &Entity<C, E, M>,
         universe: &U,
-        cell_action_executor: &mut FnMut(CA, usize),
+        cell_action_executor: &mut FnMut(CA, I),
         self_action_executor: &mut FnMut(SelfAction<C, E, EA>),
         entity_action_executor: &mut FnMut(EA, usize, Uuid)
     );
@@ -48,18 +49,19 @@ impl<
     CA: CellAction<C>,
     EA: EntityAction<C, E>,
     EI: EntityIterator<C, E, M>,
-    U: Universe<C, E, M> + ContiguousUniverse<C, E, M>,
-> Engine<C, E, M, CA, EA, U> for Box<SerialEngine<C, E, M, CA, EA, EI, U> + 'static> {
+    I: Ord + Copy,
+    U: Universe<C, E, M, Coord=I> + ContiguousUniverse<C, E, M>,
+> Engine<C, E, M, CA, EA, U> for Box<SerialEngine<C, E, M, CA, EA, EI, I, U> + 'static> {
     // #[inline(never)]
     fn step<'a>(&'a mut self, mut universe: &'a mut U) {
         // iterate over the universe's entities one at a time, passing their requested actions into the engine's core
         // and applying the results immediately based on its rules
         // TODO: Implement preallocation and preallocation metrics
-        let mut cell_action_buf: Vec<OwnedAction<C, E, CA, EA>>   = Vec::new();
-        let mut self_action_buf: Vec<OwnedAction<C, E, CA, EA>>   = Vec::new();
-        let mut entity_action_buf: Vec<OwnedAction<C, E, CA, EA>> = Vec::new();
+        let mut cell_action_buf: Vec<OwnedAction<C, E, CA, EA, I>>   = Vec::new();
+        let mut self_action_buf: Vec<OwnedAction<C, E, CA, EA, I>>   = Vec::new();
+        let mut entity_action_buf: Vec<OwnedAction<C, E, CA, EA, I>> = Vec::new();
         for (entity_ref, entity_index, universe_index) in universe.get_entities().iter() {
-            let mut cell_action_executor = |cell_action: CA, universe_index: usize| {
+            let mut cell_action_executor = |cell_action: CA, universe_index: I| {
                 let owned_action = OwnedAction {
                     source_entity_index: entity_index,
                     source_uuid: entity_ref.uuid,

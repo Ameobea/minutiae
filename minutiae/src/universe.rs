@@ -34,7 +34,7 @@ pub trait Universe<
 >{
     /// The data type that can be used to index the cells of the universe.  For a 2D universe, it would be `usize` or `isize`.
     /// For a 3D universe, it would be `(usize, usize)` or `(isize, isize)` or perhaps `Point3D`.
-    type Coord;
+    type Coord : Ord + Copy;
 
     fn get_cell(&self, coord: Self::Coord) -> Option<Cow<Cell<C>>>;
 
@@ -44,9 +44,9 @@ pub trait Universe<
 
     fn set_cell_unchecked(&mut self, coord: Self::Coord, new_state: C);
 
-    fn get_entities<'a>(&'a self) -> &'a EntityContainer<C, E, M>;
+    fn get_entities<'a>(&'a self) -> &'a EntityContainer<C, E, M, Self::Coord>;
 
-    fn get_entities_mut<'a>(&'a mut self) -> &'a mut EntityContainer<C, E, M>;
+    fn get_entities_mut<'a>(&'a mut self) -> &'a mut EntityContainer<C, E, M, Self::Coord>;
 
     // fn get_entities_at(&self, coord: Self::Coord) -> &[usize] {
     //     self.get_entities().get_entities_at(coord.into())
@@ -81,7 +81,7 @@ pub struct Universe2D<
 > {
     pub conf: UniverseConf,
     pub cells: Vec<Cell<C>>,
-    pub entities: EntityContainer<C, E, M>,
+    pub entities: EntityContainer<C, E, M, usize>,
 }
 
 impl<
@@ -99,7 +99,7 @@ impl<
         let mut universe = Universe2D {
             conf: conf,
             cells: Vec::new(),
-            entities: EntityContainer::new(universe_size),
+            entities: EntityContainer::new(),
         };
 
         // use the generator to generate an initial layout of cells and entities with which to populate the world
@@ -116,11 +116,11 @@ impl<
     }
 
     /// Creates a new shell universe without any defined logic designed for use in a hybrid client.
-    pub fn uninitialized(universe_size: usize) -> Self {
+    pub fn uninitialized() -> Self {
         Universe2D {
             conf: UniverseConf::default(),
             cells: Vec::new(),
-            entities: EntityContainer::new(universe_size),
+            entities: EntityContainer::new(),
         }
     }
 
@@ -160,11 +160,11 @@ impl<
         self.cells[coord].state = new_state;
     }
 
-    fn get_entities<'a>(&'a self) -> &'a EntityContainer<C, E, M> {
+    fn get_entities<'a>(&'a self) -> &'a EntityContainer<C, E, M, usize> {
         &self.entities
     }
 
-    fn get_entities_mut<'a>(&'a mut self) -> &'a mut EntityContainer<C, E, M> {
+    fn get_entities_mut<'a>(&'a mut self) -> &'a mut EntityContainer<C, E, M, usize> {
         &mut self.entities
     }
 }

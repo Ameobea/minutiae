@@ -1,5 +1,6 @@
 //! Engine that makes use of multiple worker threads to enable entity drivers to be evaluated concurrently.
 
+use std::fmt::Debug;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::mpsc::{sync_channel, SyncSender, Receiver};
@@ -20,12 +21,13 @@ type ActionBufs<
     E: EntityState<C> + 'static,
     CA: CellAction<C> + 'static,
     EA: EntityAction<C, E> + 'static,
+    I: 'static,
 > = (
-    Vec<OwnedAction<C, E, CA, EA>>,
+    Vec<OwnedAction<C, E, CA, EA, I>>,
     usize,
-    Vec<OwnedAction<C, E, CA, EA>>,
+    Vec<OwnedAction<C, E, CA, EA, I>>,
     usize,
-    Vec<OwnedAction<C, E, CA, EA>>,
+    Vec<OwnedAction<C, E, CA, EA, I>>,
     usize,
 );
 
@@ -34,12 +36,13 @@ pub type ActionExecutor<
     E: EntityState<C> + 'static,
     CA: CellAction<C> + 'static,
     EA: EntityAction<C, E> + 'static,
-    U: Universe<C, E, MutEntityState + 'static>,
+    I: Ord + 'static,
+    U: Universe<C, E, MutEntityState + 'static, Coord=I>,
 > = Box<Fn(
     &mut U,
-    &[OwnedAction<C, E, CA, EA>],
-    &[OwnedAction<C, E, CA, EA>],
-    &[OwnedAction<C, E, CA, EA>]
+    &[OwnedAction<C, E, CA, EA, I>],
+    &[OwnedAction<C, E, CA, EA, I>],
+    &[OwnedAction<C, E, CA, EA, I>]
 )>;
 
 pub struct ParallelEngine<
@@ -48,29 +51,34 @@ pub struct ParallelEngine<
     M: MutEntityState + Send + 'static,
     CA: CellAction<C> + Send + 'static,
     EA: EntityAction<C, E> + Send + 'static,
-    U: Universe<C, E, M> + ContiguousUniverse<C, E, M>,
+    I: Ord + Copy + Send + 'static,
+    U: Universe<C, E, M, Coord=I> + ContiguousUniverse<C, E, M>,
 > {
     worker_count: usize,
     // Uses a function trait out of necessity since we have need to do that for the hybrid server.
-    exec_actions: ActionExecutor<C, E, CA, EA, U>,
-    action_buf_rx: Receiver<ActionBufs<C, E, CA, EA>>,
-    wakeup_senders: Vec<SyncSender<WakeupMessage<C, E, M, CA, EA>>>,
+    exec_actions: ActionExecutor<C, E, CA, EA, I, U>,
+    action_buf_rx: Receiver<ActionBufs<C, E, CA, EA, I>>,
+    wakeup_senders: Vec<SyncSender<WakeupMessage<C, E, M, CA, EA, I>>>,
     index: Arc<AtomicUsize>,
-    recycled_action_bufs: Vec<ActionBufs<C, E, CA, EA>>,
-    action_buf_buf: Vec<ActionBufs<C, E, CA, EA>>,
+    recycled_action_bufs: Vec<ActionBufs<C, E, CA, EA, I>>,
+    action_buf_buf: Vec<ActionBufs<C, E, CA, EA, I>>,
 }
 
 /// Message sent over the wakeup channels containing recycled action buffers and the number of entities that need to be processed
 pub struct WakeupMessage<
-    C: CellState + Send + 'static, E: EntityState<C> + Send + 'static, M: MutEntityState + Send + 'static,
-    CA: CellAction<C> + Send + 'static, EA: EntityAction<C, E> + Send + 'static
+    C: CellState + Send + 'static,
+    E: EntityState<C> + Send + 'static,
+    M: MutEntityState + Send + 'static,
+    CA: CellAction<C> + Send + 'static,
+    EA: EntityAction<C, E> + Send + 'static,
+    I: Ord + Copy + Send + 'static,
 > {
-    cell_action_buf: Vec<OwnedAction<C, E, CA, EA>>,
-    self_action_buf: Vec<OwnedAction<C, E, CA, EA>>,
-    entity_action_buf: Vec<OwnedAction<C, E, CA, EA>>,
+    cell_action_buf: Vec<OwnedAction<C, E, CA, EA, I>>,
+    self_action_buf: Vec<OwnedAction<C, E, CA, EA, I>>,
+    entity_action_buf: Vec<OwnedAction<C, E, CA, EA, I>>,
     entity_count: usize,
     cells_ptr: *const Vec<Cell<C>>,
-    entities_ptr: *const EntityContainer<C, E, M>,
+    entities_ptr: *const EntityContainer<C, E, M, I>,
     index: Arc<AtomicUsize>,
 }
 
@@ -79,8 +87,9 @@ unsafe impl<
     E: EntityState<C> + Send + 'static,
     M: MutEntityState + Send + 'static,
     CA: CellAction<C> + Send + 'static,
-    EA: EntityAction<C, E> + Send + 'static
-> Send for WakeupMessage<C, E, M, CA, EA> {}
+    EA: EntityAction<C, E> + Send + 'static,
+    I: Ord + Copy + Send + 'static,
+> Send for WakeupMessage<C, E, M, CA, EA, I> {}
 
 impl<
     C: CellState + Send,
@@ -88,16 +97,17 @@ impl<
     M: MutEntityState + Send,
     CA: CellAction<C> + Send,
     EA: EntityAction<C, E> + Send,
-    U: Universe<C, E, M> + ContiguousUniverse<C, E, M>,
-> ParallelEngine<C, E, M, CA, EA, U> {
+    I: Ord + Send + Copy + 'static,
+    U: Universe<C, E, M, Coord=I> + ContiguousUniverse<C, E, M>,
+> ParallelEngine<C, E, M, CA, EA, I, U> {
     pub fn new(
-        exec_actions: ActionExecutor<C, E, CA, EA, U>,
+        exec_actions: ActionExecutor<C, E, CA, EA, I, U>,
         entity_driver: fn(
-            universe_index: usize,
+            universe_index: I,
             entity: &Entity<C, E, M>,
-            entities: &EntityContainer<C, E, M>,
+            entities: &EntityContainer<C, E, M, I>,
             cells: &[Cell<C>],
-            cell_action_executor: &mut FnMut(CA, usize),
+            cell_action_executor: &mut FnMut(CA, I),
             self_action_executor: &mut FnMut(SelfAction<C, E, EA>),
             entity_action_executor: &mut FnMut(EA, usize, Uuid)
         )
@@ -133,7 +143,9 @@ impl<
                         .expect("Error while receiving work message over channel in worker thread; sender likely gone away!");
 
                     // convert the current cell and entity pointers into references
-                    let entities: &EntityContainer<C, E, M> = unsafe { &*(entities_ptr as *const EntityContainer<C, E, M>) };
+                    let entities: &EntityContainer<C, E, M, I> = unsafe {
+                        &*(entities_ptr as *const EntityContainer<C, E, M, I>)
+                    };
                     let cells: &Vec<Cell<C>> = unsafe { &*(cells_ptr as *const Vec<Cell<C>>) };
 
                     // keep processing work as long as there's work left to process
@@ -141,13 +153,13 @@ impl<
                         entity_index = index.fetch_add(1, Ordering::Relaxed);
                         if entity_index < entity_count {
                             match entities.entities[entity_index] {
-                                EntitySlot::Occupied{entity: ref entity_ref, universe_index} => {
-                                    let mut cell_action_executor = |cell_action: CA, universe_index: usize| {
+                                EntitySlot::Occupied { entity: ref entity_ref, ref universe_index } => {
+                                    let mut cell_action_executor = |cell_action: CA, universe_index: I| {
                                         let owned_action = OwnedAction {
                                             source_entity_index: entity_index,
                                             source_uuid: entity_ref.uuid,
                                             action: Action::CellAction {
-                                                universe_index: universe_index,
+                                                universe_index,
                                                 action: cell_action,
                                             },
                                         };
@@ -199,8 +211,13 @@ impl<
 
                                     // execute the entity driver
                                     entity_driver(
-                                        universe_index, entity_ref, entities, cells,
-                                        &mut cell_action_executor, &mut self_action_executor, &mut entity_action_executor
+                                        *universe_index,
+                                        entity_ref,
+                                        entities,
+                                        cells,
+                                        &mut cell_action_executor,
+                                        &mut self_action_executor,
+                                        &mut entity_action_executor
                                     );
                                 },
                                 EntitySlot::Empty(_) => (),
@@ -243,15 +260,14 @@ impl<
 }
 
 impl<
-    C: CellState + 'static,
-    E: EntityState<C> + 'static,
-    M: MutEntityState + 'static,
-    CA: CellAction<C> + 'static,
-    EA: EntityAction<C, E> + 'static,
-    U: Universe<C, E, M> + ContiguousUniverse<C, E, M>,
-> Engine<C, E, M, CA, EA, U> for Box<ParallelEngine<C, E, M, CA, EA, U>> where
-    C:Send, E:Send, M:Send, CA:Send, EA:Send, CA: ::std::fmt::Debug, EA: ::std::fmt::Debug, C: ::std::fmt::Debug, E: ::std::fmt::Debug
-{
+    C: CellState + Send + Debug + 'static,
+    E: EntityState<C> + Send + Debug + 'static,
+    M: MutEntityState + Send + 'static,
+    CA: CellAction<C> + Send + Debug + 'static,
+    EA: EntityAction<C, E> + Send + Debug + 'static,
+    I: Ord + Send + Copy + 'static,
+    U: Universe<C, E, M, Coord=I> + ContiguousUniverse<C, E, M>,
+> Engine<C, E, M, CA, EA, U> for Box<ParallelEngine<C, E, M, CA, EA, I, U>> {
     fn step(&mut self, mut universe: &mut U) {
         let &mut ParallelEngine {
             ref index, worker_count,
@@ -266,7 +282,7 @@ impl<
         // pointer overhead that has to happen every cycle.
         let entity_count = universe.get_entities().len();
         let cells_ptr = universe.get_cells() as *const Vec<Cell<C>>;
-        let entities_ptr = universe.get_entities() as *const EntityContainer<C, E, M>;
+        let entities_ptr = universe.get_entities() as *const EntityContainer<C, E, M, I>;
         // reset current entity count to 0
         index.store(0, Ordering::Relaxed);
 
