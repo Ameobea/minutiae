@@ -2,7 +2,7 @@
 
 #![allow(unused_features)]
 
-#![feature(conservative_impl_trait, integer_atomics, test)]
+#![feature(conservative_impl_trait, integer_atomics, step_trait, test)]
 
 extern crate test;
 extern crate num_cpus;

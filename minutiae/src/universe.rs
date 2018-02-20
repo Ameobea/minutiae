@@ -3,11 +3,14 @@
 //! about their neighbors; a view distance of 0 means they only have knowledge of their own state, a view distance of
 //! 1 means that they have knowledge of all neighbors touching them (including diagonals), etc.
 
+use std::borrow::Cow;
+use std::ops::Range;
+use std::iter::{Map, Step};
+
 use container::EntityContainer;
 use cell::{Cell, CellState};
 use entity::{EntityState, MutEntityState};
 use generator::Generator;
-use action::{CellAction, EntityAction};
 
 #[derive(Clone)]
 pub struct UniverseConf {
@@ -33,9 +36,9 @@ pub trait Universe<
     /// For a 3D universe, it would be `(usize, usize)` or `(isize, isize)` or perhaps `Point3D`.
     type Coord;
 
-    fn get_cell<'a>(&'a self, Self::Coord) -> Option<&'a Cell<C>>;
+    fn get_cell(&self, coord: Self::Coord) -> Option<Cow<Cell<C>>>;
 
-    unsafe fn get_cell_unchecked<'a>(&'a self, Self::Coord) -> &'a Cell<C>;
+    unsafe fn get_cell_unchecked(&self, coord: Self::Coord) -> Cow<Cell<C>>;
 
     fn set_cell(&mut self, coord: Self::Coord, new_state: C);
 
@@ -44,6 +47,10 @@ pub trait Universe<
     fn get_entities<'a>(&'a self) -> &'a EntityContainer<C, E, M>;
 
     fn get_entities_mut<'a>(&'a mut self) -> &'a mut EntityContainer<C, E, M>;
+
+    // fn get_entities_at(&self, coord: Self::Coord) -> &[usize] {
+    //     self.get_entities().get_entities_at(coord.into())
+    // }
 }
 
 /// Represents universes that store their cells as a flat buffer that can be accessed as a vector.
@@ -133,12 +140,13 @@ impl<
 > Universe<C, E, M> for Universe2D<C, E, M> {
     type Coord = usize;
 
-    fn get_cell<'a>(&'a self, coord: Self::Coord) -> Option<&'a Cell<C>> {
+    fn get_cell(&self, coord: Self::Coord) -> Option<Cow<Cell<C>>> {
         self.cells.get(coord)
+            .map(|c| Cow::Borrowed(c))
     }
 
-    unsafe fn get_cell_unchecked<'a>(&'a self, coord: Self::Coord) -> &'a Cell<C> {
-        self.cells.get_unchecked(coord)
+    unsafe fn get_cell_unchecked(&self, coord: Self::Coord) -> Cow<Cell<C>> {
+        Cow::Borrowed(self.cells.get_unchecked(coord))
     }
 
     fn set_cell(&mut self, coord: Self::Coord, new_state: C) {

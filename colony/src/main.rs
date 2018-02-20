@@ -1,15 +1,32 @@
+#![feature(box_syntax, test)]
+
 extern crate minutiae;
+extern crate test;
 
 use minutiae::prelude::*;
+use minutiae::driver::BasicDriver;
+use minutiae::server::ColorServer;
 
-pub mod sparse_universe;
-pub mod world_generator;
+mod engine;
+mod sparse_universe;
+mod world_generator;
+
+use engine::ColonyEngine;
+use sparse_universe::Sparse2DUniverse;
+use world_generator::WorldGenerator;
 
 pub const UNIVERSE_SIZE: usize = 100_000;
 
-#[derive(Clone)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CS {
+    __placeholder,
+    __placeholder2,
+}
 
+impl Default for CS {
+    fn default() -> Self {
+        CS::__placeholder
+    }
 }
 
 impl CellState for CS {}
@@ -40,8 +57,18 @@ pub enum EA {
 
 impl EntityAction<CS, ES> for EA {}
 
+fn color_calculator() {
 
+}
 
 fn main() {
-    println!("Hello, world!");
+    let universe = sparse_universe::Sparse2DUniverse::new(WorldGenerator, UNIVERSE_SIZE);
+    let driver = BasicDriver;
+    let engine = ColonyEngine;
+
+    let middleware = &[
+        box ColorServer::new(UNIVERSE_SIZE, color_calculator)
+    ];
+
+    driver.init(universe, engine, )
 }

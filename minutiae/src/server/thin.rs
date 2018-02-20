@@ -5,7 +5,9 @@
 //! They are best suited to situations where the server logic is very computationally expensive and the differences
 //! between ticks are not very large (large differences cause large bandwidth usage).
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
+use std::ops::Range;
 use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 
 #[allow(unused_imports)]
@@ -13,6 +15,7 @@ use test;
 use uuid::Uuid;
 
 use super::*;
+use universe::Universe;
 use util::Color;
 #[allow(unused_imports)]
 use prelude::*;
@@ -92,18 +95,38 @@ impl ClientMessage for ThinClientMessage {
     }
 }
 
-pub struct ColorServer<C: CellState, E: EntityState<C>, M: MutEntityState> {
+pub struct ColorServer<
+    C: CellState + 'static,
+    E: EntityState<C>,
+    M: MutEntityState,
+    X,
+    U: Universe<C, E, M, Coord=X>,
+> {
     pub universe_len: usize,
     pub colors: RwLock<Vec<Color>>,
     pub color_calculator: fn(&Cell<C>, entity_indexes: &[usize], entity_container: &EntityContainer<C, E, M>) -> Color,
     pub seq: Arc<AtomicU32>,
+    pub view: Range<X>,
+    pub iterator: fn(&U, Range<X>) -> Box<Iterator<Item=(X, Cow<Cell<C>>)>>,
 }
 
-impl<C: CellState, E: EntityState<C>, M: MutEntityState> ColorServer<C, E, M> {
+impl<
+    'i,
+    C: CellState + 'static,
+    E: EntityState<C>,
+    M: MutEntityState,
+    X,
+    U: Universe<C, E, M, Coord=X>,
+> ColorServer<C, E, M, X, U> {
     pub fn new(
-        universe_size: usize, color_calculator: fn(
-            &Cell<C>, entity_indexes: &[usize], entity_container: &EntityContainer<C, E, M>
-        ) -> Color
+        universe_size: usize,
+        color_calculator: fn(
+            &Cell<C>,
+            entity_indexes: &[usize],
+            entity_container: &EntityContainer<C, E, M>,
+        ) -> Color,
+        iterator: fn(&U, Range<X>) -> Box<Iterator<Item=(X, Cow<Cell<C>>)>>,
+        default_view: Range<X>,
     ) -> Self { // boxed so we're sure it doesn't move and we can pass pointers to it around
         let universe_len = universe_size * universe_size;
         ColorServer {
@@ -111,27 +134,36 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> ColorServer<C, E, M> {
             colors: RwLock::new(vec![Color([0, 0, 0]); universe_len]),
             color_calculator,
             seq: Arc::new(AtomicU32::new(0)),
+            view: default_view,
+            iterator,
         }
     }
 }
 
 impl<
-    C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static,
-    CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static,
-> ServerLogic<C, E, M, CA, EA, ThinServerMessage, ThinClientMessage> for ColorServer<C, E, M> {
-    fn tick(&mut self, universe: &mut Universe<C, E, M, CA, EA>) -> Option<Vec<ThinServerMessage>> {
+    C: CellState + 'static,
+    E: EntityState<C> + 'static,
+    M: MutEntityState + 'static,
+    CA: CellAction<C> + 'static,
+    EA: EntityAction<C, E> + 'static,
+    X: Into<usize> + Clone + Copy + 'static,
+    U: Universe<C, E, M, Coord=X> + 'static,
+> ServerLogic<
+    C, E, M, CA, EA, ThinServerMessage, ThinClientMessage, U
+> for ColorServer<C, E, M, X, U> {
+    fn tick(&mut self, universe: &mut U) -> Option<Vec<ThinServerMessage>> {
         // TODO: Create an option for making this parallel because it's a 100% parallelizable task
         let mut diffs = Vec::new();
         let mut colors = self.colors.write().expect("Unable to lock colors vector for writing!");
-        for i in 0..self.universe_len {
-            let cell = unsafe { universe.cells.get_unchecked(i) };
-            let entity_indexes = universe.entities.get_entities_at(i);
 
-            let new_color = (self.color_calculator)(cell, entity_indexes, &universe.entities);
-            let mut last_color = unsafe { colors.get_unchecked_mut(i) };
+        for (coord, cell) in (self.iterator)(universe, self.view.clone()) {
+            let entity_indexes = universe.get_entities().get_entities_at(coord.into());
+
+            let new_color = (self.color_calculator)(cell.as_ref(), entity_indexes, universe.get_entities());
+            let mut last_color = unsafe { colors.get_unchecked_mut(coord.into()) };
             if &new_color != last_color {
                 // color for that coordinate has changed, so add a diff to the diff buffer and update `last_colors`
-                /*self.*/diffs.push(Diff {universe_index: i, color: new_color.clone()});
+                /*self.*/diffs.push(Diff {universe_index: coord.into(), color: new_color.clone()});
                 (*last_color) = new_color;
             }
         }
@@ -144,14 +176,17 @@ impl<
     }
 
     fn handle_client_message(
-        server: &mut Server<C, E, M, CA, EA, ThinServerMessage, ThinClientMessage, Self>, client_message: &ThinClientMessage
+        server: &mut Server<C, E, M, CA, EA, ThinServerMessage, ThinClientMessage, U, Self>,
+        client_message: &ThinClientMessage
     ) -> Option<Vec<ThinServerMessage>> {
+        let seq = server.get_seq();
+
         match client_message.content {
             ThinClientMessageContent::SendSnapshot => {
                 // create the snapshot by cloning the colors from the server.
                 let snap: Vec<Color> = (*server).logic.colors.read().unwrap().clone();
                 Some(vec![ThinServerMessage {
-                    seq: (*server).get_seq(),
+                    seq,
                     contents: ThinServerMessageContents::Snapshot(snap),
                 }])
             },
@@ -168,7 +203,7 @@ fn server_message_encode(b: &mut test::Bencher) {
         contents: ThinServerMessageContents::Diff(vec![Diff{universe_index: 100, color: Color([9u8, 144u8, 88u8])}; 100000]),
     };
 
-    b.bytes = serialized_size(&message);
+    b.bytes = serialized_size(&message).unwrap();
 
     b.iter(|| {
         message.bin_serialize().unwrap()
@@ -188,7 +223,7 @@ fn server_message_decode(b: &mut test::Bencher) {
     };
     let serialized = message.bin_serialize().unwrap();
 
-    b.bytes = serialized_size(&message);
+    b.bytes = serialized_size(&message).unwrap();
 
     b.iter(|| {
         ThinServerMessage::bin_deserialize(&serialized).unwrap()

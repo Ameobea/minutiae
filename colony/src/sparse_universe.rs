@@ -1,8 +1,9 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::marker::PhantomData;
 
-use minutiae::util::get_index as get_index_util;
+use minutiae::util::{get_coords, get_index as get_index_util};
 
 use super::*;
 
@@ -14,8 +15,6 @@ pub trait CellGenerator<
     MES: MutEntityState
 > {
     fn gen_cell(&self, universe_index: usize) -> Cell<CS>;
-
-    fn gen_cell_ref<'a>(&'a self, universe_index: usize) -> &'a Cell<CS>;
 
     fn gen_initial_entities(&self, universe_index: usize) -> Vec<Entity<CS, ES, MES>>;
 }
@@ -51,7 +50,15 @@ impl<
     MES: MutEntityState,
     G: CellGenerator<CS, ES, MES>,
 > Sparse2DUniverse<CS, ES, MES, G> {
-
+    pub fn new(gen: G, universe_size: usize) -> Self {
+        Sparse2DUniverse {
+            data: BTreeMap::new(),
+            gen,
+            entities: EntityContainer::new(universe_size),
+            __phantom_es: PhantomData,
+            __phantom_mes: PhantomData,
+        }
+    }
 }
 
 fn get_index(coord: (usize, usize)) -> usize {
@@ -60,21 +67,22 @@ fn get_index(coord: (usize, usize)) -> usize {
 
 impl<
     'b,
-    CS: CellState + PartialEq,
+    CS: CellState + Copy + PartialEq,
     ES: EntityState<CS>,
     MES: MutEntityState,
     G: CellGenerator<CS, ES, MES>,
 > Universe<CS, ES, MES> for Sparse2DUniverse<CS, ES, MES, G> {
     type Coord = (usize, usize);
 
-    fn get_cell<'a>(&'a self, coord: Self::Coord) -> Option<&'a Cell<CS>> {
+    fn get_cell(&self, coord: Self::Coord) -> Option<Cow<Cell<CS>>> {
         let index = get_index(coord);
-        self.data
-            .get(&index)
-            .or(Some(self.gen.gen_cell_ref(index)))
+
+        self.data.get(&index)
+            .map(|c| Cow::Borrowed(c))
+            .or(Some(Cow::Owned(self.gen.gen_cell(index))))
     }
 
-    unsafe fn get_cell_unchecked<'a>(&'a self, coord: Self::Coord) -> &'a Cell<CS> {
+    unsafe fn get_cell_unchecked(&self, coord: Self::Coord) -> Cow<Cell<CS>> {
         self.get_cell(coord).unwrap()
     }
 
@@ -112,4 +120,49 @@ impl<
     fn get_entities_mut<'a>(&'a mut self) -> &'a mut EntityContainer<CS, ES, MES> {
         &mut self.entities
     }
+}
+
+#[bench]
+fn sparse_universe_access(bencher: &mut test::Bencher) {
+    use std::mem::size_of;
+
+    println!("Size of `CS`: {}", size_of::<CS>());
+
+    const UNIVERSE_SIZE: usize = 10_000;
+
+    struct DummyGen;
+
+    impl CellGenerator<CS, ES, MES> for DummyGen {
+        fn gen_cell(&self, _: usize) -> Cell<CS> {
+            Cell { state: CS::default() }
+        }
+
+        fn gen_initial_entities(&self, _: usize) -> Vec<Entity<CS, ES, MES>> {
+            unimplemented!()
+        }
+    }
+
+    let mut uni: Sparse2DUniverse<
+        CS, ES, MES, DummyGen
+    > = Sparse2DUniverse::new(DummyGen, UNIVERSE_SIZE);
+
+    // Initialze the universe with some values
+    for i in 0..(UNIVERSE_SIZE / 2) {
+        uni.set_cell_unchecked(get_coords(i, UNIVERSE_SIZE), CS::__placeholder2);
+    }
+
+    let mut i = 0;
+
+    bencher.iter(|| {
+        let cell: Cell<CS> = uni
+            .get_cell(get_coords(i, UNIVERSE_SIZE))
+            .unwrap()
+            .into_owned();
+
+        assert_eq!(cell, Cell { state: CS::__placeholder2 });
+
+        if i == (UNIVERSE_SIZE / 2) {
+            i = 0;
+        }
+    })
 }

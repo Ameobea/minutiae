@@ -5,7 +5,7 @@ use std::fmt::Debug;
 use std::io::BufReader;
 use std::cmp::{PartialOrd, Ord};
 
-use bincode::{self, serialize_into, serialized_size, Infinite};
+use bincode::{self, serialize_into, serialized_size};
 use flate2::Compression;
 use flate2::write::DeflateEncoder;
 use flate2::bufread::DeflateDecoder;
@@ -45,7 +45,7 @@ pub trait Message : Sized {
 // glue to implement `Message` for everything by default where it's possible
 impl<T> Message for T where T:Debug + PartialEq + Eq + Sized + Send + Serialize, for<'de> T: Deserialize<'de> {
     fn bin_serialize(&self) -> Result<Vec<u8>, String> {
-        bincode::serialize(self, Infinite).map_err(|_| String::from("Unable to serialize message."))
+        bincode::serialize(self).map_err(|_| String::from("Unable to serialize message."))
     }
 
     fn bin_deserialize(data: &[u8]) -> Result<Self, String> {
@@ -70,11 +70,11 @@ pub trait ClientMessage : Message {
 pub trait CompressedMessage : Sized + Send + PartialEq + Serialize {
     /// Encodes the message in binary format, compressing it in the process.
     fn do_serialize(&self) -> Result<Vec<u8>, String> {
-        println!("Size of raw binary: {}", serialized_size(self));
-        let mut compressed = Vec::with_capacity(serialized_size(self) as usize);
+        println!("Size of raw binary: {}", serialized_size(self).unwrap());
+        let mut compressed = Vec::with_capacity(serialized_size(self).unwrap() as usize);
         {
-            let mut encoder = DeflateEncoder::new(&mut compressed, Compression::Default);
-            serialize_into(&mut encoder, self, Infinite)
+            let mut encoder = DeflateEncoder::new(&mut compressed, Compression::default());
+            serialize_into(&mut encoder, self)
                 .map_err(|_| String::from("Error while serializing compressed message."))?;
             encoder.finish().map_err(|err| format!("Unable to finish the encoder: {:?}", err))?;
         }
@@ -85,7 +85,7 @@ pub trait CompressedMessage : Sized + Send + PartialEq + Serialize {
     /// Decodes and decompresses a binary-encoded message.
     fn do_deserialize(data: &[u8]) -> Result<Self, String> where for<'de> Self: Deserialize<'de> {
         let mut decoder = DeflateDecoder::new(BufReader::new(data));
-        bincode::deserialize_from(&mut decoder, Infinite)
+        bincode::deserialize_from(&mut decoder)
             .map_err(|err| format!("Error deserializing decompressed binary into compressed message: {:?}", err))
     }
 }

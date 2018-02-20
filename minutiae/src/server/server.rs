@@ -18,18 +18,31 @@ use driver::middleware::Middleware;
 use super::*;
 
 pub trait ServerLogic<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>,
-    SM: Message, CM: Message
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    SM: Message,
+    CM: Message,
+    U: Universe<C, E, M>,
 > : Sized {
     // called every tick; the resulting messages are broadcast to every connected client.
-    fn tick(&mut self, universe: &mut Universe<C, E, M, CA, EA>) -> Option<Vec<SM>>;
+    fn tick(&mut self, universe: &mut U) -> Option<Vec<SM>>;
     // called for every message received from a client.
-    fn handle_client_message(&mut Server<C, E, M, CA, EA, SM, CM, Self>, &CM) -> Option<Vec<SM>>;
+    fn handle_client_message(&mut Server<C, E, M, CA, EA, SM, CM, U, Self>, &CM) -> Option<Vec<SM>>;
 }
 
 pub struct Server<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>,
-    SM: Message, CM: Message, L: ServerLogic<C, E, M, CA, EA, SM, CM>
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    SM: Message,
+    CM: Message,
+    U: Universe<C, E, M>,
+    L: ServerLogic<C, E, M, CA, EA, SM, CM, U>,
 > {
     pub universe_len: usize,
     pub logic: L,
@@ -43,13 +56,20 @@ pub struct Server<
     __phantom_ea: PhantomData<EA>,
     __phantom_sm: PhantomData<SM>,
     __phamtom_cm: PhantomData<CM>,
+    __phantom_u: PhantomData<U>,
 }
 
 impl<
-    C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static,
-    CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static,
-    SM: Message + 'static, CM: Message + 'static, L: ServerLogic<C, E, M, CA, EA, SM, CM> + 'static
-> Server<C, E, M, CA, EA, SM, CM, L> {
+    C: CellState + 'static,
+    E: EntityState<C> + 'static,
+    M: MutEntityState + 'static,
+    CA: CellAction<C> + 'static,
+    EA: EntityAction<C, E> + 'static,
+    SM: Message + 'static,
+    CM: Message + 'static,
+    U: Universe<C, E, M> + 'static,
+    L: ServerLogic<C, E, M, CA, EA, SM, CM, U> + 'static
+> Server<C, E, M, CA, EA, SM, CM, U, L> {
     pub fn new(universe_size: usize, ws_host: &'static str, logic: L, seq: Arc<AtomicU32>) -> Box<Self> {
         let server = Box::new(Server {
             universe_len: universe_size * universe_size,
@@ -63,34 +83,51 @@ impl<
             __phantom_ea: PhantomData,
             __phantom_sm: PhantomData,
             __phamtom_cm: PhantomData,
+            __phantom_u: PhantomData,
         });
 
         // get a pointer to the inner server and use it to initialize the websocket server
         let server_ptr = Box::into_raw(server);
         unsafe {
-            let server_ref: &mut Server<C, E, M, CA, EA, SM, CM, L> = &mut *server_ptr;
-            ptr::write(&mut server_ref.ws_broadcaster as *mut ws::Sender, init_ws_server(ws_host, Spaceship(server_ptr)));
+            let server_ref: &mut Server<C, E, M, CA, EA, SM, CM, U, L> = &mut *server_ptr;
+            ptr::write(
+                &mut server_ref.ws_broadcaster as *mut ws::Sender,
+                init_ws_server(ws_host, Spaceship(server_ptr))
+            );
             Box::from_raw(server_ptr)
         }
     }
 }
 
 impl<
-    C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static,
-    CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static,
-    SM: Message + 'static, CM: Message + 'static, L: ServerLogic<C, E, M, CA, EA, SM, CM> + 'static
-> Server<C, E, M, CA, EA, SM, CM, L> {
+    C: CellState + 'static,
+    E: EntityState<C> + 'static,
+    M: MutEntityState + 'static,
+    CA: CellAction<C> + 'static,
+    EA: EntityAction<C, E> + 'static,
+    SM: Message + 'static,
+    CM: Message + 'static,
+    U: Universe<C, E, M>,
+    L: ServerLogic<C, E, M, CA, EA, SM, CM, U> + 'static
+> Server<C, E, M, CA, EA, SM, CM, U, L> {
     pub fn get_seq(&self) -> u32 {
         self.seq.load(Ordering::Relaxed)
     }
 }
 
 impl<
-    C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static,
-    CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static, N: Engine<C, E, M, CA, EA>,
-    SM: Message + 'static, CM: Message + 'static, L: ServerLogic<C, E, M, CA, EA, SM, CM> + 'static
-> Middleware<C, E, M, CA, EA, N> for Box<Server<C, E, M, CA, EA, SM, CM, L>> {
-    fn after_render(&mut self, universe: &mut Universe<C, E, M, CA, EA>) {
+    C: CellState + 'static,
+    E: EntityState<C> + 'static,
+    M: MutEntityState + 'static,
+    CA: CellAction<C> + 'static,
+    EA: EntityAction<C, E> + 'static,
+    U: Universe<C, E, M>,
+    N: Engine<C, E, M, CA, EA, U>,
+    SM: Message + 'static,
+    CM: Message + 'static,
+    L: ServerLogic<C, E, M, CA, EA, SM, CM, U> + 'static
+> Middleware<C, E, M, CA, EA, U, N> for Box<Server<C, E, M, CA, EA, SM, CM, U, L>> {
+    fn after_render(&mut self, universe: &mut U) {
         if let Some(msgs) = self.logic.tick(universe) {
             for msg in msgs {
                 // convert the message into binary format and then send it over the websocket
@@ -105,18 +142,35 @@ impl<
 }
 
 struct WsServerHandler<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>,
-    SM: Message, CM: Message, L: ServerLogic<C, E, M, CA, EA, SM, CM>
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    SM: Message,
+    CM: Message,
+    U: Universe<C, E, M>,
+    L: ServerLogic<C, E, M, CA, EA, SM, CM, U>
 >  {
     out: ws::Sender,
-    server_ptr: Spaceship<Server<C, E, M, CA, EA, SM, CM, L>>,
+    server_ptr: Spaceship<Server<C, E, M, CA, EA, SM, CM, U, L>>,
 }
 
 impl<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>,
-    SM: Message, CM: Message, L: ServerLogic<C, E, M, CA, EA, SM, CM>
-> WsServerHandler<C, E, M, CA, EA, SM, CM, L> {
-    pub fn new(out: ws::Sender, server_ptr: Spaceship<Server<C, E, M, CA, EA, SM, CM, L>>) -> Self {
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    SM: Message,
+    CM: Message,
+    U: Universe<C, E, M>,
+    L: ServerLogic<C, E, M, CA, EA, SM, CM, U>
+> WsServerHandler<C, E, M, CA, EA, SM, CM, U, L> {
+    pub fn new(
+        out: ws::Sender,
+        server_ptr: Spaceship<Server<C, E, M, CA, EA, SM, CM, U, L>>
+    ) -> Self {
         WsServerHandler { out, server_ptr }
     }
 }
@@ -132,9 +186,16 @@ impl<T> Clone for Spaceship<T> {
 unsafe impl<T> Send for Spaceship<T> {}
 
 impl<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>,
-    SM: Message, CM: Message, L: ServerLogic<C, E, M, CA, EA, CM, SM>
-> Handler for WsServerHandler<C, E, M, CA, EA, CM, SM, L> {
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    SM: Message,
+    CM: Message,
+    U: Universe<C, E, M>,
+    L: ServerLogic<C, E, M, CA, EA, CM, SM, U>
+> Handler for WsServerHandler<C, E, M, CA, EA, CM, SM, U, L> {
     fn on_message(&mut self, msg: ws::Message) -> Result<(), ws::Error> {
         match msg {
             ws::Message::Binary(bin) => {
@@ -147,7 +208,7 @@ impl<
                     }
                 };
 
-                let server: &mut Server<C, E, M, CA, EA, CM, SM, L> = unsafe { &mut *self.server_ptr.0 };
+                let server: &mut Server<C, E, M, CA, EA, CM, SM, U, L> = unsafe { &mut *self.server_ptr.0 };
                 match L::handle_client_message(server, &client_msg) {
                     Some(msgs) => {
                         // serialize and transmit the messages to the client
@@ -167,11 +228,17 @@ impl<
 }
 
 fn init_ws_server<
-    C: CellState + 'static, E: EntityState<C> + 'static, M: MutEntityState + 'static,
-    CA: CellAction<C> + 'static, EA: EntityAction<C, E> + 'static,
-    SM: Message + 'static, CM: Message + 'static, L: ServerLogic<C, E, M, CA, EA, SM, CM> + 'static
+    C: CellState + 'static,
+    E: EntityState<C> + 'static,
+    M: MutEntityState + 'static,
+    CA: CellAction<C> + 'static,
+    EA: EntityAction<C, E> + 'static,
+    SM: Message + 'static,
+    CM: Message + 'static,
+    U: Universe<C, E, M> + 'static,
+    L: ServerLogic<C, E, M, CA, EA, SM, CM, U> + 'static
 > (
-    ws_host: &'static str, ship: Spaceship<Server<C, E, M, CA, EA, SM, CM, L>>
+    ws_host: &'static str, ship: Spaceship<Server<C, E, M, CA, EA, SM, CM, U, L>>
 ) -> ws::Sender {
     let server = WebSocket::new(move |out: ws::Sender| {
         WsServerHandler::new(out, ship.clone())

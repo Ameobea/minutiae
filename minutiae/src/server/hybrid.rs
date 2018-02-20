@@ -24,14 +24,21 @@ use super::{Server, ServerMessage, ClientMessage};
 /// Helper trait to contain some of the massive spam caused in trait definitions.  This requires that implementors are
 pub trait HybParam : Send + Serialize + for<'de> Deserialize<'de> {}
 
-pub type HybridServerSnapshot<C: CellState, E: EntityState<C>, M: MutEntityState> = (Vec<Cell<C>>, EntityContainer<C, E, M>);
+pub type HybridServerSnapshot<
+    C: CellState, E: EntityState<C>, M: MutEntityState
+> = (Vec<Cell<C>>, EntityContainer<C, E, M>);
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(bound = "C: for<'d> Deserialize<'d>")]
 pub enum HybridServerMessageContents<
-    C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA>
+    C: CellState + HybParam,
+    E: EntityState<C> + HybParam,
+    M: MutEntityState + HybParam,
+    CA: CellAction<C> + HybParam,
+    EA: EntityAction<C, E> + HybParam,
+    U: Universe<C, E, M>,
+    V: Event<C, E, M, CA, EA, U>
 > {
     Snapshot(HybridServerSnapshot<C, E, M>),
     Event(Vec<V>),
@@ -40,6 +47,7 @@ pub enum HybridServerMessageContents<
     __phantom_m(PhantomData<M>),
     __phantom_ca(PhantomData<CA>),
     __phantom_ea(PhantomData<EA>),
+    __phantom_u(PhantomData<U>),
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,11 +75,16 @@ impl ClientMessage for HybridClientMessage {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(bound = "C: for<'d> Deserialize<'d>")]
 pub struct HybridServerMessage<
-    C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam
+    C: CellState + HybParam,
+    E: EntityState<C> + HybParam,
+    M: MutEntityState + HybParam,
+    CA: CellAction<C> + HybParam,
+    EA: EntityAction<C, E> + HybParam,
+    U: Universe<C, E, M>,
+    V: Event<C, E, M, CA, EA, U> + HybParam
 > {
     pub seq: u32,
-    pub contents: HybridServerMessageContents<C, E, M, CA, EA, V>,
+    pub contents: HybridServerMessageContents<C, E, M, CA, EA, U, V>,
     __phantom_c: PhantomData<C>,
     __phantom_e: PhantomData<E>,
     __phantom_m: PhantomData<M>,
@@ -81,50 +94,80 @@ pub struct HybridServerMessage<
 }
 
 impl<
-    C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam
-> Debug for HybridServerMessage<C, E, M, CA, EA, V> {
+    C: CellState + HybParam,
+    E: EntityState<C> + HybParam,
+    M: MutEntityState + HybParam,
+    CA: CellAction<C> + HybParam,
+    EA: EntityAction<C, E> + HybParam,
+    U: Universe<C, E, M>,
+    V: Event<C, E, M, CA, EA, U> + HybParam
+> Debug for HybridServerMessage<C, E, M, CA, EA, U, V> {
     fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error> {
         write!(formatter, "HybridServerMessage {{seq: {}, contents: {{..}} }}", self.seq)
     }
 }
 
 impl<
-    C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam
-> PartialEq for HybridServerMessage<C, E, M, CA, EA, V> {
+    C: CellState + HybParam,
+    E: EntityState<C> + HybParam,
+    M: MutEntityState + HybParam,
+    CA: CellAction<C> + HybParam,
+    EA: EntityAction<C, E> + HybParam,
+    U: Universe<C, E, M>,
+    V: Event<C, E, M, CA, EA, U> + HybParam
+> PartialEq for HybridServerMessage<C, E, M, CA, EA, U, V> {
     fn eq(&self, rhs: &Self) -> bool {
         self.seq == rhs.seq /*&& self.contents == rhs.seq*/
     }
 }
 
 impl<
-    C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam
-> Eq for HybridServerMessage<C, E, M, CA, EA, V> {}
+    C: CellState + HybParam,
+    E: EntityState<C> + HybParam,
+    M: MutEntityState + HybParam,
+    CA: CellAction<C> + HybParam,
+    EA: EntityAction<C, E> + HybParam,
+    U: Universe<C, E, M>,
+    V: Event<C, E, M, CA, EA, U> + HybParam
+> Eq for HybridServerMessage<C, E, M, CA, EA, U, V> {}
 
 impl<
-    C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam
-> PartialOrd for HybridServerMessage<C, E, M, CA, EA, V> {
+    C: CellState + HybParam,
+    E: EntityState<C> + HybParam,
+    M: MutEntityState + HybParam,
+    CA: CellAction<C> + HybParam,
+    EA: EntityAction<C, E> + HybParam,
+    U: Universe<C, E, M>,
+    V: Event<C, E, M, CA, EA, U> + HybParam
+> PartialOrd for HybridServerMessage<C, E, M, CA, EA, U, V> {
     fn partial_cmp(&self, rhs: &Self) -> Option<Ordering> {
         Some(self.seq.cmp(&rhs.seq))
     }
 }
 
 impl<
-    C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam
-> Ord for HybridServerMessage<C, E, M, CA, EA, V> {
+    C: CellState + HybParam,
+    E: EntityState<C> + HybParam,
+    M: MutEntityState + HybParam,
+    CA: CellAction<C> + HybParam,
+    EA: EntityAction<C, E> + HybParam,
+    U: Universe<C, E, M>,
+    V: Event<C, E, M, CA, EA, U> + HybParam
+> Ord for HybridServerMessage<C, E, M, CA, EA, U, V> {
     fn cmp(&self, rhs: &Self) -> Ordering {
         self.seq.cmp(&rhs.seq)
     }
 }
 
 impl<
-    C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam, CA: CellAction<C> + HybParam,
-    EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam
-> ServerMessage<HybridServerSnapshot<C, E, M>> for HybridServerMessage<C, E, M, CA, EA, V> {
+    C: CellState + HybParam,
+    E: EntityState<C> + HybParam,
+    M: MutEntityState + HybParam,
+    CA: CellAction<C> + HybParam,
+    EA: EntityAction<C, E> + HybParam,
+    U: Universe<C, E, M> + HybParam,
+    V: Event<C, E, M, CA, EA, U> + HybParam
+> ServerMessage<HybridServerSnapshot<C, E, M>> for HybridServerMessage<C, E, M, CA, EA, U, V> {
     fn get_seq(&self) -> u32 { self.seq }
 
     fn get_snapshot(self) -> Result<HybridServerSnapshot<C, E, M>, Self> {
@@ -137,10 +180,18 @@ impl<
 }
 
 impl<
-    C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam, CA: CellAction<C> + HybParam,
-    EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam
-> HybridServerMessage<C, E, M, CA, EA, V> {
-    pub fn new(seq: u32, contents: HybridServerMessageContents<C, E, M, CA, EA, V>) -> Self {
+    C: CellState + HybParam,
+    E: EntityState<C> + HybParam,
+    M: MutEntityState + HybParam,
+    CA: CellAction<C> + HybParam,
+    EA: EntityAction<C, E> + HybParam,
+    U: Universe<C, E, M>,
+    V: Event<C, E, M, CA, EA, U> + HybParam
+> HybridServerMessage<C, E, M, CA, EA, U, V> {
+    pub fn new(
+        seq: u32,
+        contents: HybridServerMessageContents<C, E, M, CA, EA, U, V>
+    ) -> Self {
         HybridServerMessage {
             seq, contents,
             __phantom_c: PhantomData,
@@ -154,10 +205,18 @@ impl<
 }
 
 pub struct HybridServer<
-    C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam,
+    C: CellState + HybParam,
+    E: EntityState<C> + HybParam,
+    M: MutEntityState + HybParam,
+    CA: CellAction<C> + HybParam,
+    EA: EntityAction<C, E> + HybParam,
+    U: Universe<C, E, M>,
+    V: Event<C, E, M, CA, EA, U> + HybParam,
     F: Fn(
-        &mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>]
+        &mut U,
+        &[OwnedAction<C, E, CA, EA>],
+        &[OwnedAction<C, E, CA, EA>],
+        &[OwnedAction<C, E, CA, EA>]
     ) -> Option<Vec<V>>,
 > {
     pub pending_snapshot: bool,
@@ -172,16 +231,29 @@ pub struct HybridServer<
     __phantom_ca: PhantomData<CA>,
     __phantom_ea: PhantomData<EA>,
     __phantom_v: PhantomData<V>,
+    __phantom_u: PhantomData<U>,
 }
 
 impl<
-    C: CellState + HybParam, E: EntityState<C> + HybParam, M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam, EA: EntityAction<C, E> + HybParam, V: Event<C, E, M, CA, EA> + HybParam + Clone,
+    C: CellState + HybParam,
+    E: EntityState<C> + HybParam,
+    M: MutEntityState + HybParam,
+    CA: CellAction<C> + HybParam,
+    EA: EntityAction<C, E> + HybParam,
+    U: Universe<C, E, M> + HybParam,
+    V: Event<C, E, M, CA, EA, U> + HybParam + Clone,
     F: Fn(
-        &mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>]
+        &mut U,
+        &[OwnedAction<C, E, CA, EA>],
+        &[OwnedAction<C, E, CA, EA>],
+        &[OwnedAction<C, E, CA, EA>]
     ) -> Option<Vec<V>>
-> ServerLogic<C, E, M, CA, EA, HybridServerMessage<C, E, M, CA, EA, V>, HybridClientMessage> for HybridServer<C, E, M, CA, EA, V, F> {
-    fn tick(&mut self, universe: &mut Universe<C, E, M, CA, EA>) -> Option<Vec<HybridServerMessage<C, E, M, CA, EA, V>>> {
+> ServerLogic<
+    C, E, M, CA, EA, HybridServerMessage<C, E, M, CA, EA, U, V>, HybridClientMessage, U
+> for HybridServer<C, E, M, CA, EA, U, V, F> {
+    fn tick(
+        &mut self, universe: &mut U
+    ) -> Option<Vec<HybridServerMessage<C, E, M, CA, EA, U, V>>> {
         let mut pending_messages: Option<Vec<V>> = None;
         if self.pending_snapshot {
             self.pending_snapshot = false;
@@ -194,7 +266,10 @@ impl<
         // are used as the sources for this.
         // TODO: Look into recycling the buffers rather than reallocating if we're going to keep this system (we shouldn't)
         let merged_events: Vec<V> = match (self.event_generator)(
-            universe, &*self.self_actions.read().unwrap(), &*self.cell_actions.read().unwrap(), &*self.entity_actions.read().unwrap()
+            universe,
+            &*self.self_actions.read().unwrap(),
+            &*self.cell_actions.read().unwrap(),
+            &*self.entity_actions.read().unwrap()
         ) {
             Some(events) => {
                 match pending_messages {
@@ -207,13 +282,18 @@ impl<
             None => pending_messages.unwrap_or(vec![]),
         };
 
-        Some(vec![HybridServerMessage::new(self.seq.load(AtomicOrdering::Relaxed), HybridServerMessageContents::Event(merged_events))])
+        Some(vec![HybridServerMessage::new(
+            self.seq.load(AtomicOrdering::Relaxed),
+            HybridServerMessageContents::Event(merged_events)
+        )])
     }
 
     fn handle_client_message(
-        server: &mut Server<C, E, M, CA, EA, HybridServerMessage<C, E, M, CA, EA, V>, HybridClientMessage, Self>,
+        server: &mut Server<
+            C, E, M, CA, EA, HybridServerMessage<C, E, M, CA, EA, U, V>, HybridClientMessage, U, Self
+        >,
         message: &HybridClientMessage
-    ) -> Option<Vec<HybridServerMessage<C, E, M, CA, EA, V>>> {
+    ) -> Option<Vec<HybridServerMessage<C, E, M, CA, EA, U, V>>> {
         match message.contents {
             HybridClientMessageContents::RequestSnapshot => {
                 // don't have access to the universe, so we really can't send an accurate snapshot.  Instead,
@@ -226,18 +306,29 @@ impl<
 }
 
 impl<
-    C: CellState + HybParam + 'static, E: EntityState<C> + HybParam + 'static, M: MutEntityState + HybParam + 'static,
-    CA: CellAction<C> + HybParam + 'static, EA: EntityAction<C, E> + HybParam + 'static, V: Event<C, E, M, CA, EA> + HybParam + 'static,
+    C: CellState + HybParam + 'static,
+    E: EntityState<C> + HybParam + 'static,
+    M: MutEntityState + HybParam + 'static,
+    CA: CellAction<C> + HybParam + 'static,
+    EA: EntityAction<C, E> + HybParam + 'static,
+    U: Universe<C, E, M> + 'static,
+    V: Event<C, E, M, CA, EA, U> + HybParam + 'static,
     F: Fn(
-        &mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>]
+        &mut U,
+        &[OwnedAction<C, E, CA, EA>],
+        &[OwnedAction<C, E, CA, EA>],
+        &[OwnedAction<C, E, CA, EA>]
     ) -> Option<Vec<V>>
-> HybridServer<C, E, M, CA, EA, V, F> where OwnedAction<C, E, CA, EA>:Clone {
+> HybridServer<C, E, M, CA, EA, U, V, F> where OwnedAction<C, E, CA, EA>:Clone {
     /// Takes the action handlers for the engine and hooks them, getting an intermediate view of the actions
     /// so that they can be transmitted to the client before handling them on the client side.
     pub fn hook_handler(
-        action_executor: fn(&mut Universe<C, E, M, CA, EA>, &[OwnedAction<C, E, CA, EA>],
-        &[OwnedAction<C, E, CA, EA>], &[OwnedAction<C, E, CA, EA>]), event_generator: F
-    ) -> (ActionExecutor<C, E, M, CA, EA>, Self) {
+        action_executor: fn(&mut U, &[OwnedAction<C, E, CA, EA>],
+            &[OwnedAction<C, E, CA, EA>],
+            &[OwnedAction<C, E, CA, EA>]
+        ),
+        event_generator: F
+    ) -> (ActionExecutor<C, E, CA, EA, U>, Self) {
         let hybrid_server = HybridServer::new(event_generator);
         // create copies of the buffers so that we can write to them from outside
         let self_action_buf = hybrid_server.self_actions.clone();
@@ -246,7 +337,7 @@ impl<
 
         // create an action handler that can be passed back which handles our logic as well as the original logic
         let hooked_handler = move |
-            universe: &mut Universe<C, E, M, CA, EA>, self_actions: &[OwnedAction<C, E, CA, EA>],
+            universe: &mut U, self_actions: &[OwnedAction<C, E, CA, EA>],
             cell_actions: &[OwnedAction<C, E, CA, EA>], entity_actions: &[OwnedAction<C, E, CA, EA>]
         | {
             // copy the actions into our internal buffers so that they can be used later once we have access
@@ -276,6 +367,7 @@ impl<
             __phantom_ca: PhantomData,
             __phantom_ea: PhantomData,
             __phantom_v: PhantomData,
+            __phantom_u: PhantomData,
         }
     }
 }
@@ -283,7 +375,12 @@ impl<
 /// Defines an event that takes place in the universe.  Given the event, the hybrid client must be able to
 /// apply it to the universe.
 pub trait Event<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+    CA: CellAction<C>,
+    EA: EntityAction<C, E>,
+    U: Universe<C, E, M>
 > : Serialize + for<'u> Deserialize<'u> {
-    fn apply(&self, universe: &mut Universe<C, E, M, CA, EA>);
+    fn apply(&self, universe: &mut U);
 }
