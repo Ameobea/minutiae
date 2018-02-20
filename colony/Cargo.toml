@@ -3,6 +3,6 @@ authors = ["Casey Primozic <me@ameo.link>"]
 name = "colony"
 version = "0.1.0"
 
-[dependencies]
-minutiae = "0.8.0"
+[dependencies.minutiae]
 path = "../minutiae"
+version = "0.9.0"

@@ -37,9 +37,9 @@ pub trait Universe<
 
     unsafe fn get_cell_unchecked<'a>(&'a self, Self::Coord) -> &'a Cell<C>;
 
-    fn get_cell_mut<'a>(&'a mut self, Self::Coord) -> Option<&'a mut Cell<C>>;
+    fn set_cell(&mut self, coord: Self::Coord, new_state: C);
 
-    unsafe fn get_cell_mut_unchecked<'a>(&'a mut self, Self::Coord) -> &'a mut Cell<C>;
+    fn set_cell_unchecked(&mut self, coord: Self::Coord, new_state: C);
 
     fn get_entities<'a>(&'a self) -> &'a EntityContainer<C, E, M>;
 
@@ -141,12 +141,15 @@ impl<
         self.cells.get_unchecked(coord)
     }
 
-    fn get_cell_mut<'a>(&'a mut self, coord: Self::Coord) -> Option<&'a mut Cell<C>> {
-        self.cells.get_mut(coord)
+    fn set_cell(&mut self, coord: Self::Coord, new_state: C) {
+        match self.cells.get_mut(coord) {
+            Some(&mut Cell { ref mut state }) => *state = new_state,
+            None => (),
+        }
     }
 
-    unsafe fn get_cell_mut_unchecked<'a>(&'a mut self, coord: Self::Coord) -> &'a mut Cell<C> {
-        self.cells.get_unchecked_mut(coord)
+    fn set_cell_unchecked(&mut self, coord: Self::Coord, new_state: C) {
+        self.cells[coord].state = new_state;
     }
 
     fn get_entities<'a>(&'a self) -> &'a EntityContainer<C, E, M> {
