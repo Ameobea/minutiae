@@ -1,4 +1,4 @@
-#![feature(box_syntax, conservative_impl_trait, integer_atomics, test)]
+#![feature(conservative_impl_trait, integer_atomics, test)]
 
 extern crate minutiae;
 extern crate serde;
@@ -81,6 +81,8 @@ fn main() {
     let universe = sparse_universe::Sparse2DUniverse::new(WorldGenerator);
     let driver = BasicDriver;
 
+    let engine = engine::get_engine();
+
     let colorserver = ColorServer::new(
         color_calculator,
         |start, end| UniverseIterator::new(start, end),
@@ -89,7 +91,7 @@ fn main() {
     );
 
     driver.init(universe, engine::get_engine(), &mut [
-        box Server::new("0.0.0.0:7037", colorserver, Arc::new(AtomicU32::new(0))),
-        box MinDelay::from_tps(20.),
+        Box::new(Server::new("0.0.0.0:7037", colorserver, Arc::new(AtomicU32::new(0)))),
+        Box::new(MinDelay::from_tps(20.)),
     ]);
 }

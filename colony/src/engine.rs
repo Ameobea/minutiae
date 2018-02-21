@@ -25,7 +25,8 @@ pub fn get_engine<'u>() -> impl Engine<CS, ES, MES, CA, EA, Sparse2DUniverse<CS,
         P2D,
         Sparse2DUniverse<CS, ES, MES, WorldGenerator>,
         Sparse2DUniverse<CS, ES, MES, WorldGenerator>,
-    > = ParallelEngine::new(box exec_actions, our_entity_driver);
+        _
+    > = ParallelEngine::new(exec_actions, our_entity_driver);
 
-    box engine
+    Box::new(engine)
 }

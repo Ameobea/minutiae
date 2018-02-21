@@ -13,7 +13,6 @@ use uuid::Uuid;
 
 use universe::Universe;
 use cell::{Cell, CellState};
-use engine::parallel::ActionExecutor;
 use entity::{EntityState, MutEntityState};
 use action::{CellAction, EntityAction, OwnedAction};
 use container::EntityContainer;
@@ -336,7 +335,15 @@ impl<
             &[OwnedAction<C, E, CA, EA, I>],
             &[OwnedAction<C, E, CA, EA, I>]
         ) -> Option<Vec<V>>
-    ) -> (ActionExecutor<C, E, CA, EA, I, U>, Self) {
+    ) -> (
+        impl Fn(
+            &mut U,
+            &[OwnedAction<C, E, CA, EA, I>],
+            &[OwnedAction<C, E, CA, EA, I>],
+            &[OwnedAction<C, E, CA, EA, I>]
+        ),
+        Self,
+    ) {
         let hybrid_server = HybridServer::new(event_generator);
         // create copies of the buffers so that we can write to them from outside
         let self_action_buf = hybrid_server.self_actions.clone();
@@ -360,7 +367,7 @@ impl<
             action_executor(universe, self_actions, cell_actions, entity_actions);
         };
 
-        (Box::new(hooked_handler), hybrid_server)
+        (hooked_handler, hybrid_server)
     }
 
     pub fn new(

@@ -1,6 +1,7 @@
 //! Engine that makes use of multiple worker threads to enable entity drivers to be evaluated concurrently.
 
 use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::sync::mpsc::{sync_channel, SyncSender, Receiver};
@@ -31,20 +32,6 @@ type ActionBufs<
     usize,
 );
 
-pub type ActionExecutor<
-    C: CellState + 'static,
-    E: EntityState<C> + 'static,
-    CA: CellAction<C> + 'static,
-    EA: EntityAction<C, E> + 'static,
-    I: Ord + 'static,
-    U: Universe<C, E, MutEntityState + 'static, Coord=I>,
-> = Box<Fn(
-    &mut U,
-    &[OwnedAction<C, E, CA, EA, I>],
-    &[OwnedAction<C, E, CA, EA, I>],
-    &[OwnedAction<C, E, CA, EA, I>]
-)>;
-
 pub struct ParallelEngine<
     C: CellState + Send + 'static,
     E: EntityState<C> + Send + 'static,
@@ -54,15 +41,22 @@ pub struct ParallelEngine<
     I: Ord + Copy + Send + 'static,
     CC: CellContainer<C, I>,
     U: Universe<C, E, M, Coord=I>,
+    F: Fn(
+        &mut U,
+        &[OwnedAction<C, E, CA, EA, I>],
+        &[OwnedAction<C, E, CA, EA, I>],
+        &[OwnedAction<C, E, CA, EA, I>]
+    ),
 > {
     worker_count: usize,
     // Uses a function trait out of necessity since we have need to do that for the hybrid server.
-    exec_actions: ActionExecutor<C, E, CA, EA, I, U>,
+    exec_actions: F,
     action_buf_rx: Receiver<ActionBufs<C, E, CA, EA, I>>,
     wakeup_senders: Vec<SyncSender<WakeupMessage<C, E, M, CA, EA, I, CC>>>,
     index: Arc<AtomicUsize>,
     recycled_action_bufs: Vec<ActionBufs<C, E, CA, EA, I>>,
     action_buf_buf: Vec<ActionBufs<C, E, CA, EA, I>>,
+    __phantom_u: PhantomData<U>,
 }
 
 /// Message sent over the wakeup channels containing recycled action buffers and the number of entities that need to be processed
@@ -103,9 +97,15 @@ impl<
     I: Ord + Send + Copy + 'static,
     CC: CellContainer<C, I> + Send + 'static,
     U: Universe<C, E, M, Coord=I>,
-> ParallelEngine<C, E, M, CA, EA, I, CC, U> {
+    F: Fn(
+        &mut U,
+        &[OwnedAction<C, E, CA, EA, I>],
+        &[OwnedAction<C, E, CA, EA, I>],
+        &[OwnedAction<C, E, CA, EA, I>]
+    )
+> ParallelEngine<C, E, M, CA, EA, I, CC, U, F> {
     pub fn new(
-        exec_actions: ActionExecutor<C, E, CA, EA, I, U>,
+        exec_actions: F,
         entity_driver: fn(
             universe_index: I,
             entity: &Entity<C, E, M>,
@@ -259,6 +259,7 @@ impl<
             index: Arc::new(AtomicUsize::new(0)),
             recycled_action_bufs,
             action_buf_buf,
+            __phantom_u: PhantomData,
         }
     }
 }
@@ -272,7 +273,13 @@ impl<
     I: Ord + Send + Copy + 'static,
     CC: CellContainer<C, I>,
     U: Universe<C, E, M, Coord=I> + ContiguousUniverse<C, E, M, I, CC>,
-> Engine<C, E, M, CA, EA, U> for Box<ParallelEngine<C, E, M, CA, EA, I, CC, U>> {
+    F: Fn(
+        &mut U,
+        &[OwnedAction<C, E, CA, EA, I>],
+        &[OwnedAction<C, E, CA, EA, I>],
+        &[OwnedAction<C, E, CA, EA, I>]
+    ),
+> Engine<C, E, M, CA, EA, U> for Box<ParallelEngine<C, E, M, CA, EA, I, CC, U, F>> {
     fn step(&mut self, mut universe: &mut U) {
         let &mut ParallelEngine {
             ref index, worker_count,
@@ -280,7 +287,8 @@ impl<
             ref action_buf_rx,
             ref mut wakeup_senders,
             ref mut recycled_action_bufs,
-            ref mut action_buf_buf
+            ref mut action_buf_buf,
+            ..
         } = &mut **self;
 
         // TODO: Look into bullying Rust into letting us do without the `Arc` since that's a Heap allocation plus

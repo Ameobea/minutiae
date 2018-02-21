@@ -29,7 +29,7 @@ impl<
     I: Ord,
 > Generator<CS, ES, MES> for CellGenerator<CS, ES, MES, I> {
     fn gen(&mut self, conf: &UniverseConf) -> (Vec<Cell<CS>>, Vec<Vec<Entity<CS, ES, MES>>>) {
-        unimplemented!()
+        (Vec::new(), Vec::new())
     }
 }
 
@@ -242,7 +242,7 @@ fn sparse_universe_access(bencher: &mut test::Bencher) {
         }
 
         fn gen_initial_entities(&self, _: P2D) -> Vec<Entity<CS, ES, MES>> {
-            unimplemented!()
+            Vec::new()
         }
     }
 
