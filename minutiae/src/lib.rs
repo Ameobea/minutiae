@@ -7,6 +7,8 @@
 extern crate test;
 extern crate num_cpus;
 extern crate uuid;
+#[macro_use]
+extern crate lazy_static;
 
 #[cfg(any(feature = "serde", feature = "client"))]
 extern crate serde;

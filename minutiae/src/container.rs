@@ -1,6 +1,7 @@
 //! Declares container types that are used to provide abstracted access to data strucures within a universe.
 
 use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::mem;
 use std::ops::{Index, IndexMut};
 use std::usize;
@@ -29,17 +30,21 @@ impl<I: Ord> EntityPositions<I> {
     }
 }
 
+lazy_static! {
+    static ref EMPTY: Vec<usize> = Vec::new();
+}
+
 impl<I: Ord> Index<I> for EntityPositions<I> {
     type Output = Vec<usize>;
 
     fn index<'a>(&'a self, index: I) -> &'a Self::Output {
-        unsafe { &self.0.get(&index).unwrap() }
+        &self.0.get(&index).unwrap_or(&EMPTY) // I'm a legit genius
     }
 }
 
 impl<I: Ord> IndexMut<I> for EntityPositions<I> {
     fn index_mut<'a>(&'a mut self, index: I) -> &'a mut Self::Output {
-        unsafe { self.0.get_mut(&index).unwrap() }
+        self.0.entry(index).or_insert(Vec::new())
     }
 }
 

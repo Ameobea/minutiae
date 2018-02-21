@@ -6,7 +6,6 @@ extern crate serde;
 extern crate serde_derive;
 extern crate test;
 
-use std::borrow::Cow;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 
@@ -71,15 +70,13 @@ fn color_calculator(
     entity_indexes: &[usize],
     entity_container: &EntityContainer<CS, ES, MES, P2D>
 ) -> Color {
-    unimplemented!();
+    Color([0u8, 0u8, 0u8])
 }
 
 fn main() {
     let universe = sparse_universe::Sparse2DUniverse::new(WorldGenerator);
     let driver = BasicDriver;
     let engine = ColonyEngine;
-
-    ;
 
     let colorserver = ColorServer::new(
         color_calculator,
