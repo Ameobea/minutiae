@@ -8,8 +8,6 @@ use minutiae::prelude::*;
 use minutiae::util::get_coords;
 use test;
 
-// use super::*;
-
 /// A world generator that can generate the initial values for arbitrary cells on demand without
 /// needing to generate surrounding cells.
 pub trait CellGenerator<
@@ -71,6 +69,7 @@ impl PartialOrd for P2D {
 
 /// Defines a sparse universe that only contains modifications made to the universe from its initial
 /// state as defined by the world generator.
+#[derive(Clone)]
 pub struct Sparse2DUniverse<
     CS: CellState,
     ES: EntityState<CS>,
@@ -154,6 +153,7 @@ impl<
     }
 }
 
+#[derive(Clone)]
 pub struct UniverseIterator {
     pub start: P2D,
     pub end: P2D,

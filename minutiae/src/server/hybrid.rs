@@ -22,7 +22,7 @@ use server::ServerLogic;
 use super::{Server, ServerMessage, ClientMessage};
 
 /// Helper trait to contain some of the massive spam caused in trait definitions.  This requires that implementors are
-pub trait HybParam : Send + Serialize + for<'de> Deserialize<'de> {}
+pub trait HybParam : Send + Clone + Serialize + for<'de> Deserialize<'de> {}
 
 pub type HybridServerSnapshot<
     C: CellState,
@@ -217,6 +217,7 @@ impl<
     }
 }
 
+#[derive(Clone)]
 pub struct HybridServer<
     C: CellState + HybParam,
     E: EntityState<C> + HybParam,
@@ -226,16 +227,15 @@ pub struct HybridServer<
     I: Ord + Copy,
     U: Universe<C, E, M, Coord=I>,
     V: Event<C, E, M, CA, EA, U> + HybParam,
-    F: Fn(
+> {
+    pub pending_snapshot: bool,
+    pub seq: Arc<AtomicU32>,
+    pub event_generator: fn(
         &mut U,
         &[OwnedAction<C, E, CA, EA, I>],
         &[OwnedAction<C, E, CA, EA, I>],
         &[OwnedAction<C, E, CA, EA, I>]
     ) -> Option<Vec<V>>,
-> {
-    pub pending_snapshot: bool,
-    pub seq: Arc<AtomicU32>,
-    pub event_generator: F,
     pub self_actions: Arc<RwLock<Vec<OwnedAction<C, E, CA, EA, I>>>>,
     pub cell_actions: Arc<RwLock<Vec<OwnedAction<C, E, CA, EA, I>>>>,
     pub entity_actions: Arc<RwLock<Vec<OwnedAction<C, E, CA, EA, I>>>>,
@@ -257,15 +257,9 @@ impl<
     I: Ord + Copy + HybParam,
     U: Universe<C, E, M, Coord=I> + HybParam,
     V: Event<C, E, M, CA, EA, U> + HybParam + Clone,
-    F: Fn(
-        &mut U,
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>]
-    ) -> Option<Vec<V>>
 > ServerLogic<
     C, E, M, CA, EA, HybridServerMessage<C, E, M, CA, EA, I, U, V>, HybridClientMessage, U
-> for HybridServer<C, E, M, CA, EA, I, U, V, F> {
+> for HybridServer<C, E, M, CA, EA, I, U, V> {
     fn tick(
         &mut self, universe: &mut U
     ) -> Option<Vec<HybridServerMessage<C, E, M, CA, EA, I, U, V>>> {
@@ -304,16 +298,15 @@ impl<
     }
 
     fn handle_client_message(
-        server: &mut Server<
-            C, E, M, CA, EA, HybridServerMessage<C, E, M, CA, EA, I, U, V>, HybridClientMessage, U, Self
-        >,
+        &mut self,
+        seq: Arc<AtomicU32>,
         message: &HybridClientMessage
     ) -> Option<Vec<HybridServerMessage<C, E, M, CA, EA, I, U, V>>> {
         match message.contents {
             HybridClientMessageContents::RequestSnapshot => {
                 // don't have access to the universe, so we really can't send an accurate snapshot.  Instead,
                 // set a flag to send the message in the future.
-                server.logic.pending_snapshot = true;
+                self.pending_snapshot = true;
                 None
             },
         }
@@ -329,13 +322,7 @@ impl<
     I: Ord + Copy + HybParam + 'static,
     U: Universe<C, E, M, Coord=I> + 'static,
     V: Event<C, E, M, CA, EA, U> + HybParam + 'static,
-    F: Fn(
-        &mut U,
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>]
-    ) -> Option<Vec<V>>
-> HybridServer<C, E, M, CA, EA, I, U, V, F> where OwnedAction<C, E, CA, EA, I> : Clone {
+> HybridServer<C, E, M, CA, EA, I, U, V> where OwnedAction<C, E, CA, EA, I> : Clone {
     /// Takes the action handlers for the engine and hooks them, getting an intermediate view of the actions
     /// so that they can be transmitted to the client before handling them on the client side.
     pub fn hook_handler(
@@ -343,7 +330,12 @@ impl<
             &[OwnedAction<C, E, CA, EA, I>],
             &[OwnedAction<C, E, CA, EA, I>]
         ),
-        event_generator: F
+        event_generator: fn(
+            &mut U,
+            &[OwnedAction<C, E, CA, EA, I>],
+            &[OwnedAction<C, E, CA, EA, I>],
+            &[OwnedAction<C, E, CA, EA, I>]
+        ) -> Option<Vec<V>>
     ) -> (ActionExecutor<C, E, CA, EA, I, U>, Self) {
         let hybrid_server = HybridServer::new(event_generator);
         // create copies of the buffers so that we can write to them from outside
@@ -371,7 +363,14 @@ impl<
         (Box::new(hooked_handler), hybrid_server)
     }
 
-    pub fn new(event_generator: F) -> Self {
+    pub fn new(
+        event_generator: fn(
+            &mut U,
+            &[OwnedAction<C, E, CA, EA, I>],
+            &[OwnedAction<C, E, CA, EA, I>],
+            &[OwnedAction<C, E, CA, EA, I>]
+        ) -> Option<Vec<V>>
+    ) -> Self {
         HybridServer {
             pending_snapshot: false,
             seq: Arc::new(AtomicU32::new(0)),

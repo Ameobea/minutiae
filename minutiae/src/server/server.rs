@@ -26,13 +26,14 @@ pub trait ServerLogic<
     SM: Message,
     CM: Message,
     U: Universe<C, E, M>,
-> : Sized {
+> : Sized + Clone {
     // called every tick; the resulting messages are broadcast to every connected client.
     fn tick(&mut self, universe: &mut U) -> Option<Vec<SM>>;
     // called for every message received from a client.
-    fn handle_client_message(&mut Server<C, E, M, CA, EA, SM, CM, U, Self>, &CM) -> Option<Vec<SM>>;
+    fn handle_client_message(&mut self, seq: Arc<AtomicU32>, &CM) -> Option<Vec<SM>>;
 }
 
+#[derive(Clone)]
 pub struct Server<
     C: CellState,
     E: EntityState<C>,
@@ -42,7 +43,7 @@ pub struct Server<
     SM: Message,
     CM: Message,
     U: Universe<C, E, M>,
-    L: ServerLogic<C, E, M, CA, EA, SM, CM, U>,
+    L: ServerLogic<C, E, M, CA, EA, SM, CM, U> + Clone,
 > {
     pub logic: L,
     // sender that can be used to broadcast a message to all connected clients
@@ -59,24 +60,26 @@ pub struct Server<
 }
 
 impl<
-    C: CellState + 'static,
-    E: EntityState<C> + 'static,
-    M: MutEntityState + 'static,
-    CA: CellAction<C> + 'static,
-    EA: EntityAction<C, E> + 'static,
-    SM: Message + 'static,
-    CM: Message + 'static,
-    U: Universe<C, E, M> + 'static,
-    L: ServerLogic<C, E, M, CA, EA, SM, CM, U> + 'static
-> Server<C, E, M, CA, EA, SM, CM, U, L> {
+    C: CellState + Send + Clone + 'static,
+    E: EntityState<C> + Send + Clone + 'static,
+    M: MutEntityState + Send + Clone + 'static,
+    CA: CellAction<C> + Send + Clone + 'static,
+    EA: EntityAction<C, E> + Send + Clone + 'static,
+    SM: Message + Send + Clone + 'static,
+    CM: Message + Send + Clone + 'static,
+    U: Universe<C, E, M> + Send + Clone + 'static,
+    L: ServerLogic<C, E, M, CA, EA, SM, CM, U> + Send + Clone + 'static
+> Server<C, E, M, CA, EA, SM, CM, U, L> where Self: Clone {
     pub fn new(
         ws_host: &'static str,
         logic: L,
         seq: Arc<AtomicU32>
     ) -> Box<Self> {
-        let server = Box::new(Server {
+        let logic_clone = logic.clone();
+
+        Box::new(Server {
             logic,
-            ws_broadcaster: unsafe { mem::uninitialized() },
+            ws_broadcaster: init_ws_server(ws_host, logic_clone, seq.clone()),
             seq,
             __phantom_c: PhantomData,
             __phantom_e: PhantomData,
@@ -86,18 +89,7 @@ impl<
             __phantom_sm: PhantomData,
             __phamtom_cm: PhantomData,
             __phantom_u: PhantomData,
-        });
-
-        // get a pointer to the inner server and use it to initialize the websocket server
-        let server_ptr = Box::into_raw(server);
-        unsafe {
-            let server_ref: &mut Server<C, E, M, CA, EA, SM, CM, U, L> = &mut *server_ptr;
-            ptr::write(
-                &mut server_ref.ws_broadcaster as *mut ws::Sender,
-                init_ws_server(ws_host, Spaceship(server_ptr))
-            );
-            Box::from_raw(server_ptr)
-        }
+        })
     }
 }
 
@@ -154,8 +146,17 @@ struct WsServerHandler<
     U: Universe<C, E, M>,
     L: ServerLogic<C, E, M, CA, EA, SM, CM, U>
 >  {
+    seq: Arc<AtomicU32>,
     out: ws::Sender,
-    server_ptr: Spaceship<Server<C, E, M, CA, EA, SM, CM, U, L>>,
+    logic: L,
+    __phantom_c: PhantomData<C>,
+    __phantom_e: PhantomData<E>,
+    __phantom_m: PhantomData<M>,
+    __phantom_ca: PhantomData<CA>,
+    __phantom_ea: PhantomData<EA>,
+    __phantom_sm: PhantomData<SM>,
+    __phamtom_cm: PhantomData<CM>,
+    __phantom_u: PhantomData<U>,
 }
 
 impl<
@@ -170,22 +171,25 @@ impl<
     L: ServerLogic<C, E, M, CA, EA, SM, CM, U>
 > WsServerHandler<C, E, M, CA, EA, SM, CM, U, L> {
     pub fn new(
+        seq: Arc<AtomicU32>,
         out: ws::Sender,
-        server_ptr: Spaceship<Server<C, E, M, CA, EA, SM, CM, U, L>>
+        logic: L,
     ) -> Self {
-        WsServerHandler { out, server_ptr }
+        WsServerHandler {
+            seq,
+            out,
+            logic,
+            __phantom_c: PhantomData,
+            __phantom_e: PhantomData,
+            __phantom_m: PhantomData,
+            __phantom_ca: PhantomData,
+            __phantom_ea: PhantomData,
+            __phantom_sm: PhantomData,
+            __phamtom_cm: PhantomData,
+            __phantom_u: PhantomData,
+        }
     }
 }
-
-struct Spaceship<T>(*mut T);
-
-impl<T> Clone for Spaceship<T> {
-    fn clone(&self) -> Self {
-        Spaceship(self.0)
-    }
-}
-
-unsafe impl<T> Send for Spaceship<T> {}
 
 impl<
     C: CellState,
@@ -210,8 +214,7 @@ impl<
                     }
                 };
 
-                let server: &mut Server<C, E, M, CA, EA, CM, SM, U, L> = unsafe { &mut *self.server_ptr.0 };
-                match L::handle_client_message(server, &client_msg) {
+                match self.logic.handle_client_message(Arc::clone(&self.seq), &client_msg) {
                     Some(msgs) => {
                         // serialize and transmit the messages to the client
                         for msg in msgs {
@@ -231,20 +234,18 @@ impl<
 }
 
 fn init_ws_server<
-    C: CellState + 'static,
-    E: EntityState<C> + 'static,
-    M: MutEntityState + 'static,
-    CA: CellAction<C> + 'static,
-    EA: EntityAction<C, E> + 'static,
-    SM: Message + 'static,
-    CM: Message + 'static,
-    U: Universe<C, E, M> + 'static,
-    L: ServerLogic<C, E, M, CA, EA, SM, CM, U> + 'static
-> (
-    ws_host: &'static str, ship: Spaceship<Server<C, E, M, CA, EA, SM, CM, U, L>>
-) -> ws::Sender {
+    C: CellState + Send + Clone + 'static,
+    E: EntityState<C> + Send + Clone + 'static,
+    M: MutEntityState + Send + Clone + 'static,
+    CA: CellAction<C> + Send + Clone + 'static,
+    EA: EntityAction<C, E> + Send + Clone + 'static,
+    SM: Message + Send + Clone + 'static,
+    CM: Message + Send + Clone + 'static,
+    U: Universe<C, E, M> + Send + Clone + 'static,
+    L: ServerLogic<C, E, M, CA, EA, SM, CM, U> + Send + Clone + 'static
+> (ws_host: &'static str, logic: L, seq: Arc<AtomicU32>) -> ws::Sender {
     let server = WebSocket::new(move |out: ws::Sender| {
-        WsServerHandler::new(out, ship.clone())
+        WsServerHandler::new(seq.clone(), out, logic.clone())
     }).expect("Unable to initialize websocket server!");
 
     let broadcaster = server.broadcaster();

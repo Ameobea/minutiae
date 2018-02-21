@@ -11,6 +11,7 @@ use std::sync::atomic::AtomicU32;
 
 use minutiae::prelude::*;
 use minutiae::driver::BasicDriver;
+use minutiae::driver::middleware::MinDelay;
 use minutiae::server::ColorServer;
 use minutiae::server::Server;
 use minutiae::util::Color;
@@ -53,12 +54,14 @@ impl MutEntityState for MES{}
 
 impl EntityState<CS> for ES {}
 
+#[derive(Clone)]
 pub enum CA {
 
 }
 
 impl CellAction<CS> for CA {}
 
+#[derive(Clone)]
 pub enum EA {
 
 }
@@ -86,6 +89,7 @@ fn main() {
     );
 
     driver.init(universe, engine, &mut [
-        box Server::new("localhost", colorserver, Arc::new(AtomicU32::new(0))),
+        box Server::new("0.0.0.0:7037", colorserver, Arc::new(AtomicU32::new(0))),
+        box MinDelay::from_tps(20.),
     ]);
 }

@@ -94,6 +94,7 @@ impl ClientMessage for ThinClientMessage {
     }
 }
 
+#[derive(Clone)]
 pub struct ColorServer<
     C: CellState + 'static,
     E: EntityState<C>,
@@ -101,7 +102,7 @@ pub struct ColorServer<
     X: Ord + Copy,
     I: ExactSizeIterator<Item=X>,
 > {
-    pub colors: RwLock<Vec<Color>>,
+    pub colors: Arc<RwLock<Vec<Color>>>,
     pub color_calculator: fn(
         &Cell<C>,
         entity_indexes: &[usize],
@@ -129,9 +130,11 @@ impl<
         iterator: fn(X, X) -> I,
         default_start_index: X,
         default_end_index: X,
-    ) -> Self { // boxed so we're sure it doesn't move and we can pass pointers to it around
+    ) -> Self {
+        let grid_size = iterator(default_start_index, default_end_index).len();
+
         ColorServer {
-            colors: RwLock::new(Vec::new()),
+            colors: Arc::new(RwLock::new(vec![Color([0, 0, 0,]); grid_size])),
             color_calculator,
             seq: Arc::new(AtomicU32::new(0)),
             iterator,
@@ -142,14 +145,14 @@ impl<
 }
 
 impl<
-    C: CellState + 'static,
-    E: EntityState<C> + 'static,
-    M: MutEntityState + 'static,
-    CA: CellAction<C> + 'static,
-    EA: EntityAction<C, E> + 'static,
-    X: Clone + Copy + Ord + 'static,
+    C: CellState + Clone + 'static,
+    E: EntityState<C> + Clone + 'static,
+    M: MutEntityState + Clone + 'static,
+    CA: CellAction<C> + Clone + 'static,
+    EA: EntityAction<C, E> + Clone + 'static,
+    X: Clone + Copy + Ord + Clone + 'static,
     U: Universe<C, E, M, Coord=X>,
-    I: ExactSizeIterator<Item=X> + 'static,
+    I: ExactSizeIterator<Item=X> + Clone + 'static,
 > ServerLogic<
     C, E, M, CA, EA, ThinServerMessage, ThinClientMessage, U
 > for ColorServer<C, E, M, X, I> {
@@ -160,10 +163,12 @@ impl<
 
         for (i, coord) in (self.iterator)(self.start_index, self.end_index).into_iter().enumerate() {
             let entity_indexes = universe.get_entities().get_entities_at(coord);
-            let cell = unsafe { universe.get_cell_unchecked(coord) };
+            // let cell = unsafe { universe.get_cell_unchecked(coord) };
+            let cell = universe.get_cell(coord).unwrap();
 
             let new_color = (self.color_calculator)(cell.as_ref(), entity_indexes, universe.get_entities());
-            let mut last_color = unsafe { colors.get_unchecked_mut(i) };
+            // let mut last_color = unsafe { colors.get_unchecked_mut(i) };
+            let mut last_color = colors.get_mut(i).unwrap();
             if &new_color != last_color {
                 // color for that coordinate has changed, so add a diff to the diff buffer and update `last_colors`
                 /*self.*/diffs.push(Diff { universe_index: i, color: new_color.clone() });
@@ -179,17 +184,16 @@ impl<
     }
 
     fn handle_client_message(
-        server: &mut Server<C, E, M, CA, EA, ThinServerMessage, ThinClientMessage, U, Self>,
+        &mut self,
+        seq: Arc<AtomicU32>,
         client_message: &ThinClientMessage
     ) -> Option<Vec<ThinServerMessage>> {
-        let seq = server.get_seq();
-
         match client_message.content {
             ThinClientMessageContent::SendSnapshot => {
                 // create the snapshot by cloning the colors from the server.
-                let snap: Vec<Color> = (*server).logic.colors.read().unwrap().clone();
+                let snap: Vec<Color> = self.colors.read().unwrap().clone();
                 Some(vec![ThinServerMessage {
-                    seq,
+                    seq: seq.load(AtomicOrdering::Relaxed),
                     contents: ThinServerMessageContents::Snapshot(snap),
                 }])
             },

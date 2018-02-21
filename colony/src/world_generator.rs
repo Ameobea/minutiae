@@ -3,6 +3,7 @@ use minutiae::prelude::*;
 use sparse_universe::CellGenerator;
 use super::*;
 
+#[derive(Clone)]
 pub struct WorldGenerator;
 
 impl<I: Ord> CellGenerator<CS, ES, MES, I> for WorldGenerator {
