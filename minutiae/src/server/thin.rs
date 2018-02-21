@@ -7,7 +7,6 @@
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::ops::Range;
 use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 
 #[allow(unused_imports)]
@@ -100,9 +99,8 @@ pub struct ColorServer<
     E: EntityState<C>,
     M: MutEntityState,
     X: Ord + Copy,
-    U: Universe<C, E, M, Coord=X>,
+    I: ExactSizeIterator<Item=X>,
 > {
-    pub universe_len: usize,
     pub colors: RwLock<Vec<Color>>,
     pub color_calculator: fn(
         &Cell<C>,
@@ -110,36 +108,35 @@ pub struct ColorServer<
         entity_container: &EntityContainer<C, E, M, X>
     ) -> Color,
     pub seq: Arc<AtomicU32>,
-    pub view: Range<X>,
-    pub iterator: fn(&U, Range<X>) -> Box<Iterator<Item=(X, Cow<Cell<C>>)>>,
+    pub iterator: fn(X, X) -> I,
+    pub start_index: X,
+    pub end_index: X,
 }
 
 impl<
-    'i,
     C: CellState + 'static,
     E: EntityState<C>,
     M: MutEntityState,
     X: Ord + Copy,
-    U: Universe<C, E, M, Coord=X>,
-> ColorServer<C, E, M, X, U> {
+    I: ExactSizeIterator<Item=X>,
+> ColorServer<C, E, M, X, I> {
     pub fn new(
-        universe_size: usize,
         color_calculator: fn(
             &Cell<C>,
             entity_indexes: &[usize],
             entity_container: &EntityContainer<C, E, M, X>,
         ) -> Color,
-        iterator: fn(&U, Range<X>) -> Box<Iterator<Item=(X, Cow<Cell<C>>)>>,
-        default_view: Range<X>,
+        iterator: fn(X, X) -> I,
+        default_start_index: X,
+        default_end_index: X,
     ) -> Self { // boxed so we're sure it doesn't move and we can pass pointers to it around
-        let universe_len = universe_size * universe_size;
         ColorServer {
-            universe_len,
-            colors: RwLock::new(vec![Color([0, 0, 0]); universe_len]),
+            colors: RwLock::new(Vec::new()),
             color_calculator,
             seq: Arc::new(AtomicU32::new(0)),
-            view: default_view,
             iterator,
+            start_index: default_start_index,
+            end_index: default_end_index,
         }
     }
 }
@@ -150,24 +147,26 @@ impl<
     M: MutEntityState + 'static,
     CA: CellAction<C> + 'static,
     EA: EntityAction<C, E> + 'static,
-    X: Into<usize> + Clone + Copy + Ord + 'static,
-    U: Universe<C, E, M, Coord=X> + 'static,
+    X: Clone + Copy + Ord + 'static,
+    U: Universe<C, E, M, Coord=X>,
+    I: ExactSizeIterator<Item=X> + 'static,
 > ServerLogic<
     C, E, M, CA, EA, ThinServerMessage, ThinClientMessage, U
-> for ColorServer<C, E, M, X, U> {
+> for ColorServer<C, E, M, X, I> {
     fn tick(&mut self, universe: &mut U) -> Option<Vec<ThinServerMessage>> {
         // TODO: Create an option for making this parallel because it's a 100% parallelizable task
         let mut diffs = Vec::new();
         let mut colors = self.colors.write().expect("Unable to lock colors vector for writing!");
 
-        for (coord, cell) in (self.iterator)(universe, self.view.clone()) {
+        for (i, coord) in (self.iterator)(self.start_index, self.end_index).into_iter().enumerate() {
             let entity_indexes = universe.get_entities().get_entities_at(coord);
+            let cell = unsafe { universe.get_cell_unchecked(coord) };
 
             let new_color = (self.color_calculator)(cell.as_ref(), entity_indexes, universe.get_entities());
-            let mut last_color = unsafe { colors.get_unchecked_mut(coord.into()) };
+            let mut last_color = unsafe { colors.get_unchecked_mut(i) };
             if &new_color != last_color {
                 // color for that coordinate has changed, so add a diff to the diff buffer and update `last_colors`
-                /*self.*/diffs.push(Diff {universe_index: coord.into(), color: new_color.clone()});
+                /*self.*/diffs.push(Diff { universe_index: i, color: new_color.clone() });
                 (*last_color) = new_color;
             }
         }

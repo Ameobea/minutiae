@@ -41,6 +41,8 @@ name = "colony"
 version = "0.1.0"
 dependencies = [
  "minutiae 0.10.0",
+ "serde 1.0.27 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.27 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

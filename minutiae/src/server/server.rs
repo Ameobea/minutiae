@@ -44,7 +44,6 @@ pub struct Server<
     U: Universe<C, E, M>,
     L: ServerLogic<C, E, M, CA, EA, SM, CM, U>,
 > {
-    pub universe_len: usize,
     pub logic: L,
     // sender that can be used to broadcast a message to all connected clients
     pub ws_broadcaster: ws::Sender,
@@ -70,9 +69,12 @@ impl<
     U: Universe<C, E, M> + 'static,
     L: ServerLogic<C, E, M, CA, EA, SM, CM, U> + 'static
 > Server<C, E, M, CA, EA, SM, CM, U, L> {
-    pub fn new(universe_size: usize, ws_host: &'static str, logic: L, seq: Arc<AtomicU32>) -> Box<Self> {
+    pub fn new(
+        ws_host: &'static str,
+        logic: L,
+        seq: Arc<AtomicU32>
+    ) -> Box<Self> {
         let server = Box::new(Server {
-            universe_len: universe_size * universe_size,
             logic,
             ws_broadcaster: unsafe { mem::uninitialized() },
             seq,

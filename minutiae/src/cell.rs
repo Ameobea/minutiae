@@ -13,10 +13,10 @@ use std::clone::Clone;
 use serde::{Serialize, Deserialize};
 
 #[cfg(feature = "serde")]
-pub trait CellState:Clone + Serialize + for<'de> Deserialize<'de> {}
+pub trait CellState: Clone + Serialize + for<'de> Deserialize<'de> {}
 
 #[cfg(not(feature = "serde"))]
-pub trait CellState:Clone {}
+pub trait CellState: Clone {}
 
 #[derive(Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -24,7 +24,7 @@ pub struct Cell<CellState> {
     pub state: CellState,
 }
 
-impl<S> Clone for Cell<S> where S:Clone {
+impl<S> Clone for Cell<S> where S: Clone {
     fn clone(&self) -> Self {
         Cell {
             state: self.state.clone(),
@@ -32,7 +32,7 @@ impl<S> Clone for Cell<S> where S:Clone {
     }
 }
 
-impl <S> PartialEq for Cell<S> where S:PartialEq {
+impl <S> PartialEq for Cell<S> where S: PartialEq {
     fn eq(&self, other: &Cell<S>) -> bool {
         self.state == other.state
     }
