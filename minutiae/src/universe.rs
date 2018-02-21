@@ -4,8 +4,7 @@
 //! 1 means that they have knowledge of all neighbors touching them (including diagonals), etc.
 
 use std::borrow::Cow;
-use std::ops::Range;
-use std::iter::{Map, Step};
+use std::iter::Step;
 
 use container::EntityContainer;
 use cell::{Cell, CellState};
@@ -53,25 +52,22 @@ pub trait Universe<
     // }
 }
 
-/// Represents universes that store their cells as a flat buffer that can be accessed as a vector.
-pub trait ContiguousUniverse<
-    C: CellState,
-    E: EntityState<C>,
-    M: MutEntityState,
+pub trait CellContainer<
+    C: CellState + 'static,
+    I: 'static,
 > {
-    fn get_cells<'a>(&'a self) -> &'a Vec<Cell<C>>;
-
-    fn get_cells_mut<'a>(&'a mut self) -> &'a mut Vec<Cell<C>>;
+    fn get_cell_direct(&self, index: I) -> Cell<C>;
 }
 
-impl<
-    C: CellState,
+/// Represents universes that store their cells as a flat buffer that can be accessed as a vector.
+pub trait ContiguousUniverse<
+    C: CellState + 'static,
     E: EntityState<C>,
     M: MutEntityState,
-> ContiguousUniverse<C, E, M> {
-    fn len(&self) -> usize {
-        self.get_cells().len()
-    }
+    I: Ord + 'static,
+    CC: CellContainer<C, I>,
+> {
+    fn get_cell_container<'a>(&'a self) -> &'a CC;
 }
 
 pub struct Universe2D<
@@ -169,16 +165,18 @@ impl<
     }
 }
 
+impl<C: CellState + 'static> CellContainer<C, usize> for Vec<Cell<C>> {
+    fn get_cell_direct(&self, index: usize) -> Cell<C> {
+        self[index].clone()
+    }
+}
+
 impl<
-    C: CellState,
+    C: CellState + 'static,
     E: EntityState<C>,
     M: MutEntityState,
-> ContiguousUniverse<C, E, M> for Universe2D<C, E, M> {
-    fn get_cells<'a>(&'a self) -> &'a Vec<Cell<C>> {
+> ContiguousUniverse<C, E, M, usize, Vec<Cell<C>>> for Universe2D<C, E, M> {
+    fn get_cell_container<'a>(&'a self) -> &'a Vec<Cell<C>> {
         &self.cells
-    }
-
-    fn get_cells_mut<'a>(&'a mut self) -> &'a mut Vec<Cell<C>> {
-        &mut self.cells
     }
 }

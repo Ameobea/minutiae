@@ -5,6 +5,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate test;
+extern crate uuid;
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
@@ -17,10 +18,10 @@ use minutiae::server::Server;
 use minutiae::util::Color;
 
 mod engine;
+mod entity_driver;
 mod sparse_universe;
 mod world_generator;
 
-use engine::ColonyEngine;
 use sparse_universe::{P2D, Sparse2DUniverse, UniverseIterator};
 use world_generator::WorldGenerator;
 
@@ -40,7 +41,7 @@ impl Default for CS {
 
 impl CellState for CS {}
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ES {
 
 }
@@ -54,14 +55,14 @@ impl MutEntityState for MES{}
 
 impl EntityState<CS> for ES {}
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum CA {
 
 }
 
 impl CellAction<CS> for CA {}
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum EA {
 
 }
@@ -79,7 +80,6 @@ fn color_calculator(
 fn main() {
     let universe = sparse_universe::Sparse2DUniverse::new(WorldGenerator);
     let driver = BasicDriver;
-    let engine = ColonyEngine;
 
     let colorserver = ColorServer::new(
         color_calculator,
@@ -88,7 +88,7 @@ fn main() {
         P2D { x: 500, y: 500 }
     );
 
-    driver.init(universe, engine, &mut [
+    driver.init(universe, engine::get_engine(), &mut [
         box Server::new("0.0.0.0:7037", colorserver, Arc::new(AtomicU32::new(0))),
         box MinDelay::from_tps(20.),
     ]);

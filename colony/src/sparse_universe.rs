@@ -5,6 +5,7 @@ use std::collections::btree_map::Entry;
 use std::marker::PhantomData;
 
 use minutiae::prelude::*;
+use minutiae::universe::{CellContainer, ContiguousUniverse};
 use minutiae::util::get_coords;
 use test;
 
@@ -101,7 +102,6 @@ impl<
 }
 
 impl<
-    'b,
     CS: CellState + Copy + PartialEq,
     ES: EntityState<CS>,
     MES: MutEntityState,
@@ -150,6 +150,34 @@ impl<
 
     fn get_entities_mut<'a>(&'a mut self) -> &'a mut EntityContainer<CS, ES, MES, P2D> {
         &mut self.entities
+    }
+}
+
+impl<
+    'u,
+    CS: CellState + 'static,
+    ES: EntityState<CS>,
+    MES: MutEntityState,
+    G: CellGenerator<CS, ES, MES, P2D>,
+> CellContainer<CS, P2D> for Sparse2DUniverse<CS, ES, MES, G> {
+    fn get_cell_direct(&self, coord: P2D) -> Cell<CS> {
+        self.data.get(&coord)
+            .map(|c| c.clone())
+            .unwrap_or(self.gen.gen_cell(coord))
+    }
+}
+
+impl<
+    'u,
+    CS: CellState + Copy + PartialEq + 'static,
+    ES: EntityState<CS>,
+    MES: MutEntityState,
+    G: CellGenerator<CS, ES, MES, P2D>,
+> ContiguousUniverse<
+    CS, ES, MES, P2D, Self
+> for Sparse2DUniverse<CS, ES, MES, G> {
+    fn get_cell_container<'a>(&'a self) -> &'a Self {
+        self
     }
 }
 

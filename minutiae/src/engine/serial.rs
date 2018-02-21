@@ -1,7 +1,7 @@
 //! A simulation engine that simulates all changes to the universe sequentially.  This is the most simple
 //! engine but doens't take advantage of any possible benifits from things like multithreading.
 
-use universe::{ContiguousUniverse, Universe};
+use universe::{CellContainer, ContiguousUniverse, Universe};
 use cell::CellState;
 use entity::{Entity, EntityState, MutEntityState};
 use action::{Action, OwnedAction, CellAction, SelfAction, EntityAction};
@@ -12,14 +12,15 @@ use super::iterator::EntityIterator;
 use uuid::Uuid;
 
 pub trait SerialEngine<
-    C: CellState,
+    C: CellState + 'static,
     E: EntityState<C>,
     M: MutEntityState,
     CA: CellAction<C>,
     EA: EntityAction<C, E>,
     EI: EntityIterator<C, E, M>,
-    I: Ord + Copy,
-    U: Universe<C, E, M, Coord=I> + ContiguousUniverse<C, E, M>,
+    I: Ord + Copy + 'static,
+    CC: CellContainer<C, I>,
+    U: Universe<C, E, M, Coord=I> + ContiguousUniverse<C, E, M, I, CC>,
 > {
     fn iter_entities(&self, &U) -> EI;
 
@@ -43,15 +44,16 @@ pub trait SerialEngine<
 }
 
 impl<
-    C: CellState,
+    C: CellState + 'static,
     E: EntityState<C>,
     M: MutEntityState,
     CA: CellAction<C>,
     EA: EntityAction<C, E>,
     EI: EntityIterator<C, E, M>,
-    I: Ord + Copy,
-    U: Universe<C, E, M, Coord=I> + ContiguousUniverse<C, E, M>,
-> Engine<C, E, M, CA, EA, U> for Box<SerialEngine<C, E, M, CA, EA, EI, I, U> + 'static> {
+    I: Ord + Copy + 'static,
+    CC: CellContainer<C, I>,
+    U: Universe<C, E, M, Coord=I> + ContiguousUniverse<C, E, M, I, CC>,
+> Engine<C, E, M, CA, EA, U> for Box<SerialEngine<C, E, M, CA, EA, EI, I, CC, U>> {
     // #[inline(never)]
     fn step<'a>(&'a mut self, mut universe: &'a mut U) {
         // iterate over the universe's entities one at a time, passing their requested actions into the engine's core
