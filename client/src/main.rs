@@ -1,20 +1,22 @@
 //! Minutiae simulation client.  See README.md for more information.
 
-extern crate uuid;
+#![feature(associated_type_defaults, conservative_impl_trait, nll)]
+
 extern crate minutiae;
 extern crate serde;
-#[macro_use]
-extern crate serde_derive;
+extern crate uuid;
 
 use std::ffi::CString;
 use std::marker::PhantomData;
 use std::mem;
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::{c_char, c_int};
+use std::ptr;
 use std::slice::from_raw_parts;
 
 use uuid::Uuid;
 
 use minutiae::server::*;
+pub use minutiae::server::Tys;
 
 extern {
     /// Used to initialize the websocket connection and start receiving+processing messages from the server
@@ -49,7 +51,7 @@ pub struct ClientState<S, SM: ServerMessage<S>> {
     pub message_buffer: Vec<SM>,
     pub last_seq: u32,
     pub uuid: Uuid,
-    pub pending_shapshot: bool,
+    pub pending_snapshot: bool,
     __phantom_s: PhantomData<S>,
 }
 
@@ -59,144 +61,129 @@ impl<S, SM: ServerMessage<S>> ClientState<S, SM> {
             message_buffer: Vec::new(),
             last_seq: 0,
             uuid: Uuid::new_v4(),
-            pending_shapshot: true,
+            pending_snapshot: true,
             __phantom_s: PhantomData,
         }
     }
 }
 
-pub trait Client<S, SM: ServerMessage<S>> {
-    fn handle_message(&mut self, message: SM);
-    fn apply_snap(&mut self, snap: S);
+static mut CLIENT_WRAPPER: *mut Box<GenClient> = ptr::null_mut();
+
+pub trait GenClient {
+    fn get_uuid(&self) -> Uuid;
+
     fn get_pixbuf_ptr(&self) -> *const u8;
-    fn get_state(&mut self) -> &mut ClientState<S, SM>;
+
+    fn handle_bin_message(&mut self, &[u8]);
+
+    fn create_snapshot_request(&self) -> Vec<u8>;
 }
 
-type ActiveClient = thin::ThinClient;
-#[cfg(feature="hybrid")]
-type ActiveClient = hybrid::HybridClientt;
-#[cfg(feature="fat")]
-type ActiveClient = fat::FatClient;
+pub trait Client<T: Tys> : GenClient {
+    fn apply_snap(&mut self, snap: T::Snapshot);
 
-type ActiveClientMessage = ThinClientMessage;
-#[cfg(feature="hybrid")]
-type ActiveClientMessage = HybridClienttMessage;
-#[cfg(feature="fat")]
-type ActiveClientMessage = FatClientMessage;
+    fn get_state(&mut self) -> &mut ClientState<T::Snapshot, T::ServerMessage>;
 
-type ActiveServerMessage = ThinServerMessage;
-#[cfg(feature="hybrid")]
-type ActiveServerMessage = HybridServerMessage;
-#[cfg(feature="fat")]
-type ActiveServerMessage = FatServerMessage;
+    fn handle_message(&mut self, T::ServerMessage);
+}
 
-/// Creates a client allocated on the heap and returns a pointer to it.
-#[no_mangle]
-pub extern "C" fn create_client(universe_size: c_int) -> *mut c_void {
-    let client = thin::ThinClient::new(universe_size as usize);
-    #[cfg(feature="hybrid")]
-    let client = hybrid::HybridClient::new(universe_size as usize);
-    #[cfg(feature="fat")]
-    let client = fat::FatClient::new(universe_size as usize);
-    Box::into_raw(Box::new(client)) as *mut c_void
+impl<T: Tys> Client<T> {
+    // TODO: Actually use sequence numbers in a somewhat intelligent manner
+    // TODO: Wait until the response from the snapshot request before applying diffs
+    pub fn handle_binary_message(&mut self, slice: &[u8]) {
+        // decompress and deserialize the message buffer into a `ThinServerMessage`
+        let message: T::ServerMessage = match T::ServerMessage::bin_deserialize(slice) {
+            Ok(msg) => msg,
+            Err(err) => {
+                println!("Error while deserializing `ThinServerMessage`: {:?}", err);
+                return;
+            },
+        };
+        let seq = message.get_seq();
+
+        if self.get_state().pending_snapshot {
+            // we have to wait until we receive the snapshot before we can start applying diffs, so
+            // queue up all received diffs until we get the snapshot
+            if message.is_snapshot() {
+                debug(&format!("Received snapshot message with seq {}", seq));
+                self.get_state().pending_snapshot = false;
+                self.get_state().last_seq = seq;
+                self.apply_snap(message.get_snapshot().unwrap());
+                // swap the buffer out of the state so we can mutably borrow the client
+                let mut messages = mem::replace(&mut self.get_state().message_buffer, Vec::new());
+                // sort all pending messages, discard any from before the snapshot was received, and apply the rest
+                messages.sort();
+
+                for queued_msg in messages {
+                    if queued_msg.get_seq() > seq {
+                        Client::handle_message(self, queued_msg);
+                    }
+                }
+            } else {
+                self.get_state().message_buffer.push(message);
+            }
+
+            return;
+        }
+
+        if seq == self.get_state().last_seq + 1 || self.get_state().last_seq == 0 {
+            Client::handle_message(self, message);
+
+            self.get_state().last_seq += 1;
+
+            // if we have buffered messages to handle, apply them now.
+            for msg in mem::replace(&mut self.get_state().message_buffer, Vec::new()) {
+                Client::handle_message(self, msg);
+            }
+        } else if seq > self.get_state().last_seq + 1 {
+            debug(&format!("Received message with sequence number greater than what we expected: {}", seq));
+
+            // store the message in the client's message buffer and wait until we receive the missing ones
+            self.get_state().message_buffer.push(message);
+
+            // if it's been a long time since we've missed the message, give up and request a new snapshot to refresh our state.
+            if seq > (self.get_state().last_seq + 60) {
+                debug(&format!("Missed message with sequence number {}; sending snapshot request...", seq));
+                unsafe { request_snapshot() };
+                self.get_state().pending_snapshot = true;
+            }
+        } else if seq == self.get_state().last_seq {
+            debug(&format!("Received duplicate message with sequence number {}", seq));
+        }
+    }
 }
 
 /// Given a client, returns a pointer to its inner pixel data buffer.
 #[no_mangle]
-pub unsafe extern "C" fn get_buffer_ptr(client: *const ActiveClient) -> *const u8 {
-    (*client).get_pixbuf_ptr() as *const u8
+pub unsafe extern "C" fn get_buffer_ptr() -> *const u8 {
+    (**CLIENT_WRAPPER).get_pixbuf_ptr() as *const u8
 }
 
 #[no_mangle]
-pub extern "C" fn process_message(client: *mut ActiveClient, message_ptr: *const u8, message_len: c_int) {
+pub unsafe extern "C" fn process_message(message_ptr: *const u8, message_len: c_int) {
     // debug(&format!("Received message of size {} from server.", message_len));
-    let mut client: &mut ActiveClient = unsafe { &mut *client };
+    let client: &mut GenClient = &mut **CLIENT_WRAPPER;
     // construct a slice from the raw data
-    let slice: &[u8] = unsafe { from_raw_parts(message_ptr, message_len as usize) };
-    // decompress and deserialize the message buffer into a `ThinServerMessage`
-    let message: ActiveServerMessage = match ActiveServerMessage::deserialize(slice) {
-        Ok(msg) => msg,
-        Err(err) => {
-            println!("Error while deserializing `ThinServerMessage`: {:?}", err);
-            return;
-        },
-    };
-
-    handle_message(client, message);
+    let slice: &[u8] = from_raw_parts(message_ptr, message_len as usize);
+    // Pass it to the client to deserialize and process
+    client.handle_bin_message(slice);
 
     // We don't need to free the message buffer on the Rust side; that will be handled from the JS
     // The same goes for drawing the updated universe to the canas.
 }
 
-// TODO: Actually use sequence numbers in a somewhat intelligent manner
-// TODO: Wait until the response from the snapshot request before applying diffs
-fn handle_message(client: &mut ActiveClient, message: ActiveServerMessage) {
-    let seq = message.get_seq();
-
-    if client.get_state().pending_shapshot {
-        // we have to wait until we receive the snapshot before we can start applying diffs, so
-        // queue up all received diffs until we get the snapshot
-        match message.get_snapshot() {
-            Ok(snap) => {
-                debug(&format!("Received snapshot message with seq {}", seq));
-                client.get_state().pending_shapshot = false;
-                client.get_state().last_seq = seq;
-                client.apply_snap(snap);
-                // swap the buffer out of the state so we can mutably borrow the client
-                let mut messages = mem::replace(&mut client.get_state().message_buffer, Vec::new());
-                // sort all pending messages, discard any from before the snapshot was received, and apply the rest
-                messages.sort();
-                for queued_msg in messages {
-                    if queued_msg.get_seq() > seq {
-                        handle_message(client, queued_msg);
-                    }
-                }
-            },
-            Err(msg) => client.get_state().message_buffer.push(msg),
-        }
-
-        return;
-    }
-
-    if seq == client.get_state().last_seq + 1 || client.get_state().last_seq == 0 {
-        client.handle_message(message);
-
-        client.get_state().last_seq += 1;
-
-        // if we have buffered messages to handle, apply them now.
-        for msg in mem::replace(&mut client.get_state().message_buffer, Vec::new()) {
-            client.handle_message(msg);
-        }
-    } else if seq > client.get_state().last_seq + 1 {
-        debug(&format!("Received message with sequence number greater than what we expected: {}", seq));
-
-        // store the message in the client's message buffer and wait until we receive the missing ones
-        client.get_state().message_buffer.push(message);
-
-        // if it's been a long time since we've missed the message, give up and request a new snapshot to refresh our state.
-        if seq > (client.get_state().last_seq + 60) {
-            debug(&format!("Missed message with sequence number {}; sending snapshot request...", seq));
-            request_snapshot_inner(client);
-            client.get_state().pending_shapshot = true;
-        }
-    } else if seq == client.get_state().last_seq {
-        debug(&format!("Received duplicate message with sequence number {}", seq));
-    }
-}
-
 #[no_mangle]
 /// Sends a message to the server requesting a snapshot of the current universe
-pub unsafe extern "C" fn request_snapshot(client: *mut ActiveClient) {
-    request_snapshot_inner(&mut *client);
-}
-
-fn request_snapshot_inner(client: &mut ActiveClient) {
-    let msg = ActiveClientMessage::create_snapshot_request((*client).get_state().uuid).serialize().unwrap();
+pub unsafe extern "C" fn request_snapshot() {
+    let msg: Vec<u8> = (**CLIENT_WRAPPER).create_snapshot_request();
     debug("Sending message requesting snapshot from the server...");
-    unsafe { send_client_message(msg.as_ptr(), msg.len() as i32) };
+    send_client_message(msg.as_ptr(), msg.len() as i32);
 }
 
 pub fn main() {
+    // TODO: Initialize the `GenClient`
+
+
     // create the websocket connection and start handling server messages
     println!("Initializing WS connection from the Rust side...");
     unsafe { init_ws() };

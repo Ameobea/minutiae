@@ -1,9 +1,10 @@
 //! Sets up code for communicating changes in universe state with remote clients.
 
-use std::sync::{Arc, RwLock};
+use std::cmp::{PartialOrd, Ord};
 use std::fmt::Debug;
 use std::io::BufReader;
-use std::cmp::{PartialOrd, Ord};
+use std::sync::{Arc, RwLock};
+use std::sync::atomic::AtomicU32;
 
 use bincode::{self, serialize_into, serialized_size};
 use flate2::Compression;
@@ -19,18 +20,43 @@ mod server;
 #[cfg(feature = "server")]
 pub use self::server::*;
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "client"))]
 mod thin;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "client"))]
 pub use self::thin::*;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "client"))]
 mod hybrid;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "client"))]
 pub use self::hybrid::*;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "client"))]
 mod fat;
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "client"))]
 pub use self::fat::*;
+
+pub trait Tys : Clone + Copy + Send {
+    type C: CellState;
+    type E: EntityState<Self::C>;
+    type M: MutEntityState;
+    type CA: CellAction<Self::C>;
+    type EA: EntityAction<Self::C, Self::E>;
+    type I: Ord + Copy;
+    type U: Universe<Self::C, Self::E, Self::M, Coord=Self::I>;
+    type V: Event<Self>;
+
+    #[cfg(not(any(feature = "thin", feature = "hybrid", feature = "fat")))]
+    type Snapshot = ();
+
+    #[cfg(feature = "thin")]
+    type Snapshot = Vec<Color>;
+
+    #[cfg(feature = "hybrid")]
+    type Snapshot = Self::U;
+
+    #[cfg(feature = "fat")]
+    type Snapshot = (); // TODO
+
+    type ServerMessage: ServerMessage<Self::Snapshot>;
+}
 
 /// A message that is passed over the websocket between the server and a client.
 pub trait Message : Sized {
@@ -57,7 +83,10 @@ impl<T> Message for T where T:Debug + PartialEq + Eq + Sized + Send + Serialize,
 /// and determine if any have been missed.
 pub trait ServerMessage<S> : Message + Ord {
     fn get_seq(&self) -> u32;
-    fn get_snapshot(self) -> Result<S, Self>;
+
+    fn is_snapshot(&self) -> bool;
+
+    fn get_snapshot(self) -> Option<S>;
 }
 
 pub trait ClientMessage : Message {
@@ -90,5 +119,11 @@ pub trait CompressedMessage : Sized + Send + PartialEq + Serialize {
     }
 }
 
-impl<'d, T> CompressedMessage for T where T:Debug + Eq + CompressedMessage, for<'de> Self: Deserialize<'de> {}
+pub trait ServerLogic<T: Tys, CM: Message> : Sized + Clone {
+    // called every tick; the resulting messages are broadcast to every connected client.
+    fn tick(&mut self, universe: &mut T::U) -> Option<Vec<T::ServerMessage>>;
+    // called for every message received from a client.
+    fn handle_client_message(&mut self, seq: Arc<AtomicU32>, &CM) -> Option<Vec<T::ServerMessage>>;
+}
 
+impl<'d, T> CompressedMessage for T where T:Debug + Eq + CompressedMessage, for<'de> Self: Deserialize<'de> {}

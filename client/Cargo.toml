@@ -1,16 +1,26 @@
 [package]
+authors = ["Casey Primozic <me@ameo.link>"]
+description = "A web-based frontend for Minutiae providing three different rendering options"
 name = "minutiae-client"
 version = "0.1.0"
-authors = ["Casey Primozic <me@ameo.link>"]
-description = "A "
 
 [dependencies]
-minutiae = { version = "0.8.0", path = "../minutiae", features = ["client"] }
-uuid = { version = "0.6.0", features = ["v4"] }
-clippy = {version = "*", optional = true}
 serde = "^1.0.27"
-serde_derive = "^1.0.27"
+
+[dependencies.clippy]
+optional = true
+version = "*"
+
+[dependencies.minutiae]
+features = ["client"]
+path = "../minutiae"
+
+[dependencies.uuid]
+features = ["v4"]
+version = "0.6.0"
 
 [features]
-hybrid = []
+default = ["thin"]
 fat = []
+hybrid = []
+thin = []

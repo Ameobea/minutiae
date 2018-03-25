@@ -9,11 +9,9 @@ mergeInto(LibraryManager.library, {
     // socket is global and is initialized to `null`
     socket = new WebSocket('ws://127.0.0.1:7037');
 
-    // Create a client and store a pointer to it in `Module`
-    var clientPtr = Module.ccall('create_client', 'number', ['number'], [800]);
     // Get a pointer to its inner pixel data buffer and store that in `Module` as well
-    var pixdataPtr = Module.ccall('get_buffer_ptr', 'number', ['number'], [clientPtr]);
-    var processMessage = Module.cwrap('process_message', null, ['number', 'number', 'number']);
+    var pixdataPtr = Module.ccall('get_buffer_ptr', 'number', [], []);
+    var processMessage = Module.cwrap('process_message', null, ['number', 'number']);
 
     function blobToTypedArray(blob, cb) {
       var fileReader = new FileReader();
@@ -38,7 +36,7 @@ mergeInto(LibraryManager.library, {
         // Allocate space in the Emscripten heap for the message's contents, copy it there, and invoke the message handler
         var bufPtr = Module._malloc(ta.length + 1);
         Module.writeArrayToMemory(ta, bufPtr);
-        processMessage(clientPtr, bufPtr, ta.length);
+        processMessage(bufPtr, ta.length);
         // once the message has been processed, update the canvas from the pixel data buffer.
         canvas_render(pixdataPtr);
         // free the allocated memory to avoid leaking it

@@ -2,7 +2,7 @@
 
 #![allow(unused_features)]
 
-#![feature(conservative_impl_trait, integer_atomics, step_trait, test)]
+#![feature(associated_type_defaults, conservative_impl_trait, integer_atomics, step_trait, test)]
 
 extern crate test;
 extern crate num_cpus;
@@ -43,7 +43,7 @@ pub mod emscripten;
 
 pub mod prelude {
     //! Utility module for re-exporting some commonly used traits
-    pub use universe::{Universe, UniverseConf};
+    pub use universe::{Universe, Universe2DConf, Universe2DConf as UniverseConf};
     pub use entity::{Entity, EntityState, MutEntityState};
     pub use cell::{Cell, CellState};
     pub use action::{Action, CellAction, SelfAction, EntityAction, OwnedAction};

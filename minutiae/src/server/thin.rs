@@ -5,7 +5,6 @@
 //! They are best suited to situations where the server logic is very computationally expensive and the differences
 //! between ticks are not very large (large differences cause large bandwidth usage).
 
-use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 
@@ -30,10 +29,18 @@ pub struct ThinServerMessage {
 impl ServerMessage<Vec<Color>> for ThinServerMessage {
     fn get_seq(&self) -> u32 { self.seq }
 
-    fn get_snapshot(self) -> Result<Vec<Color>, Self> {
+    fn is_snapshot(&self) -> bool {
+        if let ThinServerMessageContents::Snapshot(_) = self.contents {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn get_snapshot(self) -> Option<Vec<Color>> {
         match self.contents {
-            ThinServerMessageContents::Snapshot(snap) => Ok(snap),
-            _ => Err(self),
+            ThinServerMessageContents::Snapshot(snap) => Some(snap),
+            _ => None,
         }
     }
 }
@@ -96,40 +103,34 @@ impl ClientMessage for ThinClientMessage {
 
 #[derive(Clone)]
 pub struct ColorServer<
-    C: CellState + 'static,
-    E: EntityState<C>,
-    M: MutEntityState,
-    X: Ord + Copy,
-    I: ExactSizeIterator<Item=X>,
+    T: Tys,
+    I: ExactSizeIterator<Item=T::I>,
 > {
     pub colors: Arc<RwLock<Vec<Color>>>,
     pub color_calculator: fn(
-        &Cell<C>,
+        &Cell<T::C>,
         entity_indexes: &[usize],
-        entity_container: &EntityContainer<C, E, M, X>
+        entity_container: &EntityContainer<T::C, T::E, T::M, T::I>
     ) -> Color,
     pub seq: Arc<AtomicU32>,
-    pub iterator: fn(X, X) -> I,
-    pub start_index: X,
-    pub end_index: X,
+    pub iterator: fn(T::I, T::I) -> I,
+    pub start_index: T::I,
+    pub end_index: T::I,
 }
 
 impl<
-    C: CellState + 'static,
-    E: EntityState<C>,
-    M: MutEntityState,
-    X: Ord + Copy,
-    I: ExactSizeIterator<Item=X>,
-> ColorServer<C, E, M, X, I> {
+    T: Tys,
+    I: ExactSizeIterator<Item=T::I> + Clone + 'static,
+> ColorServer<T, I> where T::I: Clone + Copy + Ord + Clone + 'static {
     pub fn new(
         color_calculator: fn(
-            &Cell<C>,
+            &Cell<T::C>,
             entity_indexes: &[usize],
-            entity_container: &EntityContainer<C, E, M, X>,
+            entity_container: &EntityContainer<T::C, T::E, T::M, T::I>,
         ) -> Color,
-        iterator: fn(X, X) -> I,
-        default_start_index: X,
-        default_end_index: X,
+        iterator: fn(T::I, T::I) -> I,
+        default_start_index: T::I,
+        default_end_index: T::I,
     ) -> Self {
         let grid_size = iterator(default_start_index, default_end_index).len();
 
@@ -145,18 +146,13 @@ impl<
 }
 
 impl<
-    C: CellState + Clone + 'static,
-    E: EntityState<C> + Clone + 'static,
-    M: MutEntityState + Clone + 'static,
-    CA: CellAction<C> + Clone + 'static,
-    EA: EntityAction<C, E> + Clone + 'static,
-    X: Clone + Copy + Ord + Clone + 'static,
-    U: Universe<C, E, M, Coord=X>,
-    I: ExactSizeIterator<Item=X> + Clone + 'static,
-> ServerLogic<
-    C, E, M, CA, EA, ThinServerMessage, ThinClientMessage, U
-> for ColorServer<C, E, M, X, I> {
-    fn tick(&mut self, universe: &mut U) -> Option<Vec<ThinServerMessage>> {
+    T: Tys<ServerMessage=ThinServerMessage>,
+    I: ExactSizeIterator<Item=T::I> + Clone + 'static,
+> ServerLogic<T, ThinClientMessage> for ColorServer<T, I> where
+    T::I: Clone + Copy + Ord + Clone + 'static,
+    ThinServerMessage: ServerMessage<<T as Tys>::Snapshot>,
+{
+    fn tick(&mut self, universe: &mut T::U) -> Option<Vec<ThinServerMessage>> {
         // TODO: Create an option for making this parallel because it's a 100% parallelizable task
         let mut diffs = Vec::new();
         let mut colors = self.colors.write().expect("Unable to lock colors vector for writing!");

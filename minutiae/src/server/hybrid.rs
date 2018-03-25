@@ -12,46 +12,28 @@ use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 use universe::Universe;
-use cell::{Cell, CellState};
+use cell::CellState;
 use entity::{EntityState, MutEntityState};
 use action::{CellAction, EntityAction, OwnedAction};
-use container::EntityContainer;
-use server::ServerLogic;
 
-use super::{Server, ServerMessage, ClientMessage};
+use super::{ServerMessage, ServerLogic, Tys, ClientMessage};
 
 /// Helper trait to contain some of the massive spam caused in trait definitions.  This requires that implementors are
 pub trait HybParam : Send + Clone + Serialize + for<'de> Deserialize<'de> {}
 
-pub type HybridServerSnapshot<
-    C: CellState,
-    E: EntityState<C>,
-    M: MutEntityState,
-    I: Ord + Copy,
-> = (Vec<Cell<C>>, EntityContainer<C, E, M, I>);
+/// Defines an event that takes place in the universe.  Given the event, the hybrid client must be able to
+/// apply it to the universe.
+pub trait Event<T: Tys> : Serialize + for<'u> Deserialize<'u> {
+    fn apply(&self, universe: &mut T::Snapshot);
+}
 
 #[allow(non_camel_case_types)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(bound = "C: for<'d> Deserialize<'d>, I: ::serde::Serialize + for<'d> Deserialize<'d>")]
-pub enum HybridServerMessageContents<
-    C: CellState + HybParam,
-    E: EntityState<C> + HybParam,
-    M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam,
-    EA: EntityAction<C, E> + HybParam,
-    I: Ord + Copy,
-    U: Universe<C, E, M, Coord=I>,
-    V: Event<C, E, M, CA, EA, U>
-> {
-    Snapshot(HybridServerSnapshot<C, E, M, I>),
-    Event(Vec<V>),
-    __phantom_c(PhantomData<C>),
-    __phantom_e(PhantomData<E>),
-    __phantom_m(PhantomData<M>),
-    __phantom_ca(PhantomData<CA>),
-    __phantom_ea(PhantomData<EA>),
-    __phantom_i(PhantomData<I>),
-    __phantom_u(PhantomData<U>),
+#[serde(bound = "T::C: for<'d> Deserialize<'d>, T::I: ::serde::Serialize + for<'d> Deserialize<'d>, T::Snapshot: ::serde::Serialize + for<'d> Deserialize<'d>")]
+pub enum HybridServerMessageContents<T: Tys> {
+    Snapshot(T::Snapshot),
+    Event(Vec<T::V>),
+    __phantom_T(PhantomData<T>),
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,192 +59,105 @@ impl ClientMessage for HybridClientMessage {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-#[serde(bound = "C: for<'d> Deserialize<'d>, I: ::serde::Serialize + for<'d> Deserialize<'d>")]
-pub struct HybridServerMessage<
-    C: CellState + HybParam,
-    E: EntityState<C> + HybParam,
-    M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam,
-    EA: EntityAction<C, E> + HybParam,
-    I: Ord + Copy,
-    U: Universe<C, E, M, Coord=I>,
-    V: Event<C, E, M, CA, EA, U> + HybParam
-> {
+#[serde(bound = "T::C: for<'d> Deserialize<'d>, T::I: ::serde::Serialize + for<'d> Deserialize<'d>, T::Snapshot: ::serde::Serialize + for<'d> Deserialize<'d>")]
+pub struct HybridServerMessage<T: Tys> where T::Snapshot: Clone, T::V: Clone {
     pub seq: u32,
-    pub contents: HybridServerMessageContents<C, E, M, CA, EA, I, U, V>,
-    __phantom_c: PhantomData<C>,
-    __phantom_e: PhantomData<E>,
-    __phantom_m: PhantomData<M>,
-    __phantom_ca: PhantomData<CA>,
-    __phantom_ea: PhantomData<EA>,
-    __phantom_v: PhantomData<V>,
+    pub contents: HybridServerMessageContents<T>,
 }
 
-impl<
-    C: CellState + HybParam,
-    E: EntityState<C> + HybParam,
-    M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam,
-    EA: EntityAction<C, E> + HybParam,
-    I: Ord + Copy,
-    U: Universe<C, E, M, Coord=I>,
-    V: Event<C, E, M, CA, EA, U> + HybParam
-> Debug for HybridServerMessage<C, E, M, CA, EA, I, U, V> {
+impl<T: Tys> Debug for HybridServerMessage<T> where T::Snapshot: Clone, T::V: Clone {
     fn fmt(&self, formatter: &mut Formatter) -> Result<(), fmt::Error> {
         write!(formatter, "HybridServerMessage {{seq: {}, contents: {{..}} }}", self.seq)
     }
 }
 
-impl<
-    C: CellState + HybParam,
-    E: EntityState<C> + HybParam,
-    M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam,
-    EA: EntityAction<C, E> + HybParam,
-    I: Ord + Copy,
-    U: Universe<C, E, M, Coord=I>,
-    V: Event<C, E, M, CA, EA, U> + HybParam
-> PartialEq for HybridServerMessage<C, E, M, CA, EA, I, U, V> {
+impl<T: Tys> PartialEq for HybridServerMessage<T> where T::Snapshot: Clone, T::V: Clone {
     fn eq(&self, rhs: &Self) -> bool {
         self.seq == rhs.seq /*&& self.contents == rhs.seq*/
     }
 }
 
-impl<
-    C: CellState + HybParam,
-    E: EntityState<C> + HybParam,
-    M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam,
-    EA: EntityAction<C, E> + HybParam,
-    I: Ord + Copy,
-    U: Universe<C, E, M, Coord=I>,
-    V: Event<C, E, M, CA, EA, U> + HybParam
-> Eq for HybridServerMessage<C, E, M, CA, EA, I, U, V> {}
+impl<T: Tys> Eq for HybridServerMessage<T> where T::Snapshot: Clone, T::V: Clone {}
 
-impl<
-    C: CellState + HybParam,
-    E: EntityState<C> + HybParam,
-    M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam,
-    EA: EntityAction<C, E> + HybParam,
-    I: Ord + Copy,
-    U: Universe<C, E, M, Coord=I>,
-    V: Event<C, E, M, CA, EA, U> + HybParam
-> PartialOrd for HybridServerMessage<C, E, M, CA, EA, I, U, V> {
+impl<T: Tys> PartialOrd for HybridServerMessage<T> where T::Snapshot: Clone, T::V: Clone {
     fn partial_cmp(&self, rhs: &Self) -> Option<Ordering> {
         Some(self.seq.cmp(&rhs.seq))
     }
 }
 
-impl<
-    C: CellState + HybParam,
-    E: EntityState<C> + HybParam,
-    M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam,
-    EA: EntityAction<C, E> + HybParam,
-    I: Ord + Copy,
-    U: Universe<C, E, M, Coord=I>,
-    V: Event<C, E, M, CA, EA, U> + HybParam
-> Ord for HybridServerMessage<C, E, M, CA, EA, I, U, V> {
+impl<T: Tys> Ord for HybridServerMessage<T> where T::Snapshot: Clone, T::V: Clone {
     fn cmp(&self, rhs: &Self) -> Ordering {
         self.seq.cmp(&rhs.seq)
     }
 }
 
-impl<
-    C: CellState + HybParam,
-    E: EntityState<C> + HybParam,
-    M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam,
-    EA: EntityAction<C, E> + HybParam,
-    I: Ord + Copy + HybParam,
-    U: Universe<C, E, M, Coord=I> + HybParam,
-    V: Event<C, E, M, CA, EA, U> + HybParam
-> ServerMessage<HybridServerSnapshot<C, E, M, I>> for HybridServerMessage<C, E, M, CA, EA, I, U, V> {
+impl<T: Tys> ServerMessage<T::Snapshot> for HybridServerMessage<T> where
+    T::I: Serialize + for<'de> Deserialize<'de>,
+    T::V: Clone + Send,
+    T::U: Serialize + for<'de> Deserialize<'de> + Clone + Send,
+    T::Snapshot: Serialize + for<'de> Deserialize<'de> + Clone + Send,
+{
     fn get_seq(&self) -> u32 { self.seq }
 
-    fn get_snapshot(self) -> Result<HybridServerSnapshot<C, E, M, I>, Self> {
+    fn is_snapshot(&self) -> bool {
+        if let HybridServerMessageContents::Snapshot(_) = self.contents {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn get_snapshot(self) -> Option<T::Snapshot> {
         match self.contents {
-            HybridServerMessageContents::Snapshot(snap) => Ok(snap),
-            HybridServerMessageContents::Event{ .. } => Err(self),
+            HybridServerMessageContents::Snapshot(snap) => Some(snap),
+            HybridServerMessageContents::Event{ .. } => None,
             _ => unreachable!(),
         }
     }
 }
 
-impl<
-    C: CellState + HybParam,
-    E: EntityState<C> + HybParam,
-    M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam,
-    EA: EntityAction<C, E> + HybParam,
-    I: Ord + Copy,
-    U: Universe<C, E, M, Coord=I>,
-    V: Event<C, E, M, CA, EA, U> + HybParam
-> HybridServerMessage<C, E, M, CA, EA, I, U, V> {
+impl<T: Tys> HybridServerMessage<T> where T::Snapshot: Clone, T::V: Clone {
     pub fn new(
         seq: u32,
-        contents: HybridServerMessageContents<C, E, M, CA, EA, I, U, V>
+        contents: HybridServerMessageContents<T>
     ) -> Self {
         HybridServerMessage {
-            seq, contents,
-            __phantom_c: PhantomData,
-            __phantom_e: PhantomData,
-            __phantom_m: PhantomData,
-            __phantom_ca: PhantomData,
-            __phantom_ea: PhantomData,
-            __phantom_v: PhantomData,
+            seq,
+            contents,
         }
     }
 }
 
 #[derive(Clone)]
-pub struct HybridServer<
-    C: CellState + HybParam,
-    E: EntityState<C> + HybParam,
-    M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam,
-    EA: EntityAction<C, E> + HybParam,
-    I: Ord + Copy,
-    U: Universe<C, E, M, Coord=I>,
-    V: Event<C, E, M, CA, EA, U> + HybParam,
-> {
+pub struct HybridServer<T: Tys> {
     pub pending_snapshot: bool,
     pub seq: Arc<AtomicU32>,
     pub event_generator: fn(
-        &mut U,
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>]
-    ) -> Option<Vec<V>>,
-    pub self_actions: Arc<RwLock<Vec<OwnedAction<C, E, CA, EA, I>>>>,
-    pub cell_actions: Arc<RwLock<Vec<OwnedAction<C, E, CA, EA, I>>>>,
-    pub entity_actions: Arc<RwLock<Vec<OwnedAction<C, E, CA, EA, I>>>>,
-    __phantom_c: PhantomData<C>,
-    __phantom_e: PhantomData<E>,
-    __phantom_m: PhantomData<M>,
-    __phantom_ca: PhantomData<CA>,
-    __phantom_ea: PhantomData<EA>,
-    __phantom_v: PhantomData<V>,
-    __phantom_u: PhantomData<U>,
+        &mut T::U,
+        &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+        &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+        &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
+    ) -> Option<Vec<T::V>>,
+    pub self_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
+    pub cell_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
+    pub entity_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
 }
 
-impl<
-    C: CellState + HybParam,
-    E: EntityState<C> + HybParam,
-    M: MutEntityState + HybParam,
-    CA: CellAction<C> + HybParam,
-    EA: EntityAction<C, E> + HybParam,
-    I: Ord + Copy + HybParam,
-    U: Universe<C, E, M, Coord=I> + HybParam,
-    V: Event<C, E, M, CA, EA, U> + HybParam + Clone,
-> ServerLogic<
-    C, E, M, CA, EA, HybridServerMessage<C, E, M, CA, EA, I, U, V>, HybridClientMessage, U
-> for HybridServer<C, E, M, CA, EA, I, U, V> {
+impl<T: Tys<ServerMessage=HybridServerMessage<T>>> ServerLogic<T, HybridClientMessage> for HybridServer<T> where
+    T::C: Clone,
+    T::E: Clone,
+    T::M: Clone,
+    T::I: Serialize + for<'de> Deserialize<'de> + Clone,
+    T::U: Serialize + for<'de> Deserialize<'de> + Clone + Send,
+    T::CA: Clone,
+    T::EA: Clone,
+    T::V: Clone + Send,
+    T::Snapshot: Serialize + for<'de> Deserialize<'de> + Clone + Send,
+{
     fn tick(
-        &mut self, universe: &mut U
-    ) -> Option<Vec<HybridServerMessage<C, E, M, CA, EA, I, U, V>>> {
-        let mut pending_messages: Option<Vec<V>> = None;
+        &mut self, universe: &mut T::U
+    ) -> Option<Vec<HybridServerMessage<T>>> {
+        let mut pending_messages: Option<Vec<T::V>> = None;
         if self.pending_snapshot {
             self.pending_snapshot = false;
             pending_messages = Some(vec![]);
@@ -273,7 +168,7 @@ impl<
         // use the user-defined logic to get the events to pass through to the clients.  The internal action buffers
         // are used as the sources for this.
         // TODO: Look into recycling the buffers rather than reallocating if we're going to keep this system (we shouldn't)
-        let merged_events: Vec<V> = match (self.event_generator)(
+        let merged_events: Vec<T::V> = match (self.event_generator)(
             universe,
             &*self.self_actions.read().unwrap(),
             &*self.cell_actions.read().unwrap(),
@@ -298,9 +193,9 @@ impl<
 
     fn handle_client_message(
         &mut self,
-        seq: Arc<AtomicU32>,
+        _seq: Arc<AtomicU32>,
         message: &HybridClientMessage
-    ) -> Option<Vec<HybridServerMessage<C, E, M, CA, EA, I, U, V>>> {
+    ) -> Option<Vec<HybridServerMessage<T>>> {
         match message.contents {
             HybridClientMessageContents::RequestSnapshot => {
                 // don't have access to the universe, so we really can't send an accurate snapshot.  Instead,
@@ -312,35 +207,26 @@ impl<
     }
 }
 
-impl<
-    C: CellState + HybParam + 'static,
-    E: EntityState<C> + HybParam + 'static,
-    M: MutEntityState + HybParam + 'static,
-    CA: CellAction<C> + HybParam + 'static,
-    EA: EntityAction<C, E> + HybParam + 'static,
-    I: Ord + Copy + HybParam + 'static,
-    U: Universe<C, E, M, Coord=I> + 'static,
-    V: Event<C, E, M, CA, EA, U> + HybParam + 'static,
-> HybridServer<C, E, M, CA, EA, I, U, V> where OwnedAction<C, E, CA, EA, I> : Clone {
+impl<T: Tys> HybridServer<T> where OwnedAction<T::C, T::E, T::CA, T::EA, T::I> : Clone {
     /// Takes the action handlers for the engine and hooks them, getting an intermediate view of the actions
     /// so that they can be transmitted to the client before handling them on the client side.
     pub fn hook_handler(
-        action_executor: fn(&mut U, &[OwnedAction<C, E, CA, EA, I>],
-            &[OwnedAction<C, E, CA, EA, I>],
-            &[OwnedAction<C, E, CA, EA, I>]
+        action_executor: fn(&mut T::U, &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
         ),
         event_generator: fn(
-            &mut U,
-            &[OwnedAction<C, E, CA, EA, I>],
-            &[OwnedAction<C, E, CA, EA, I>],
-            &[OwnedAction<C, E, CA, EA, I>]
-        ) -> Option<Vec<V>>
+            &mut T::U,
+            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
+        ) -> Option<Vec<T::V>>
     ) -> (
         impl Fn(
-            &mut U,
-            &[OwnedAction<C, E, CA, EA, I>],
-            &[OwnedAction<C, E, CA, EA, I>],
-            &[OwnedAction<C, E, CA, EA, I>]
+            &mut T::U,
+            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
         ),
         Self,
     ) {
@@ -352,10 +238,10 @@ impl<
 
         // create an action handler that can be passed back which handles our logic as well as the original logic
         let hooked_handler = move |
-            universe: &mut U,
-            self_actions: &[OwnedAction<C, E, CA, EA, I>],
-            cell_actions: &[OwnedAction<C, E, CA, EA, I>],
-            entity_actions: &[OwnedAction<C, E, CA, EA, I>]
+            universe: &mut T::U,
+            self_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            cell_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            entity_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
         | {
             // copy the actions into our internal buffers so that they can be used later once we have access
             // to the universe to create our final events.
@@ -372,11 +258,11 @@ impl<
 
     pub fn new(
         event_generator: fn(
-            &mut U,
-            &[OwnedAction<C, E, CA, EA, I>],
-            &[OwnedAction<C, E, CA, EA, I>],
-            &[OwnedAction<C, E, CA, EA, I>]
-        ) -> Option<Vec<V>>
+            &mut T::U,
+            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
+        ) -> Option<Vec<T::V>>
     ) -> Self {
         HybridServer {
             pending_snapshot: false,
@@ -385,26 +271,6 @@ impl<
             self_actions: Arc::new(RwLock::new(Vec::new())),
             cell_actions: Arc::new(RwLock::new(Vec::new())),
             entity_actions: Arc::new(RwLock::new(Vec::new())),
-            __phantom_c: PhantomData,
-            __phantom_e: PhantomData,
-            __phantom_m: PhantomData,
-            __phantom_ca: PhantomData,
-            __phantom_ea: PhantomData,
-            __phantom_v: PhantomData,
-            __phantom_u: PhantomData,
         }
     }
-}
-
-/// Defines an event that takes place in the universe.  Given the event, the hybrid client must be able to
-/// apply it to the universe.
-pub trait Event<
-    C: CellState,
-    E: EntityState<C>,
-    M: MutEntityState,
-    CA: CellAction<C>,
-    EA: EntityAction<C, E>,
-    U: Universe<C, E, M>
-> : Serialize + for<'u> Deserialize<'u> {
-    fn apply(&self, universe: &mut U);
 }

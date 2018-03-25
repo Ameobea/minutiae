@@ -43,12 +43,12 @@ impl CellState for CS {}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ES {
-
+    __placeholder,
 }
 
 #[derive(Clone, Default, Copy, Serialize, Deserialize)]
 pub struct MES {
-
+    __placeholder: (),
 }
 
 impl MutEntityState for MES{}
@@ -57,14 +57,14 @@ impl EntityState<CS> for ES {}
 
 #[derive(Clone, Debug)]
 pub enum CA {
-
+    __placeholder,
 }
 
 impl CellAction<CS> for CA {}
 
 #[derive(Clone, Debug)]
 pub enum EA {
-
+    __placeholder,
 }
 
 impl EntityAction<CS, ES> for EA {}

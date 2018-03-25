@@ -4,35 +4,19 @@
 //! 1 means that they have knowledge of all neighbors touching them (including diagonals), etc.
 
 use std::borrow::Cow;
-use std::iter::Step;
 
 use container::EntityContainer;
 use cell::{Cell, CellState};
 use entity::{EntityState, MutEntityState};
 use generator::Generator;
 
-#[derive(Clone)]
-pub struct UniverseConf {
-    pub view_distance: usize,
-    pub size: usize,
-}
-
-impl Default for UniverseConf {
-    fn default() -> UniverseConf {
-        UniverseConf {
-            view_distance: 1,
-            size: 8000,
-        }
-    }
-}
-
 pub trait Universe<
     C: CellState,
     E: EntityState<C>,
     M: MutEntityState,
->{
+> : Default {
     /// The data type that can be used to index the cells of the universe.  For a 2D universe, it would be `usize` or `isize`.
-    /// For a 3D universe, it would be `(usize, usize)` or `(isize, isize)` or perhaps `Point3D`.
+    /// For a 3D universe, it would be `(usize, usize, usize)` or `(isize, isize, isize)` or perhaps `Point3D`.
     type Coord : Ord + Copy;
 
     fn get_cell(&self, coord: Self::Coord) -> Option<Cow<Cell<C>>>;
@@ -50,6 +34,8 @@ pub trait Universe<
     // fn get_entities_at(&self, coord: Self::Coord) -> &[usize] {
     //     self.get_entities().get_entities_at(coord.into())
     // }
+
+    fn empty() -> Self;
 }
 
 pub trait CellContainer<
@@ -70,12 +56,27 @@ pub trait ContiguousUniverse<
     fn get_cell_container<'a>(&'a self) -> &'a CC;
 }
 
+#[derive(Clone)]
+pub struct Universe2DConf {
+    pub view_distance: usize,
+    pub size: usize,
+}
+
+impl Default for Universe2DConf {
+    fn default() -> Universe2DConf {
+        Universe2DConf {
+            view_distance: 1,
+            size: 8000,
+        }
+    }
+}
+
 pub struct Universe2D<
     C: CellState,
     E: EntityState<C>,
     M: MutEntityState,
 > {
-    pub conf: UniverseConf,
+    pub conf: Universe2DConf,
     pub cells: Vec<Cell<C>>,
     pub entities: EntityContainer<C, E, M, usize>,
 }
@@ -86,14 +87,14 @@ impl<
     M: MutEntityState,
 > Universe2D<C, E, M> {
     pub fn new(
-        conf: UniverseConf,
+        conf: Universe2DConf,
         gen: &mut Generator<C, E, M>,
     ) -> Universe2D<C, E, M> {
         assert!(conf.size > 0);
 
         let universe_size = conf.size;
         let mut universe = Universe2D {
-            conf: conf,
+            conf,
             cells: Vec::new(),
             entities: EntityContainer::new(),
         };
@@ -114,18 +115,28 @@ impl<
     /// Creates a new shell universe without any defined logic designed for use in a hybrid client.
     pub fn uninitialized() -> Self {
         Universe2D {
-            conf: UniverseConf::default(),
+            conf: Universe2DConf::default(),
             cells: Vec::new(),
             entities: EntityContainer::new(),
         }
     }
 
-    pub fn get_conf<'a>(&'a self) -> &'a UniverseConf {
+    pub fn get_conf<'a>(&'a self) -> &'a Universe2DConf {
         &self.conf
     }
 
     pub fn get_size(&self) -> usize {
         self.conf.size
+    }
+}
+
+impl<
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+> Default for Universe2D<C, E, M> {
+    fn default() -> Self {
+        Universe2D::uninitialized()
     }
 }
 
@@ -162,6 +173,10 @@ impl<
 
     fn get_entities_mut<'a>(&'a mut self) -> &'a mut EntityContainer<C, E, M, usize> {
         &mut self.entities
+    }
+
+    fn empty() -> Self {
+        Self::uninitialized()
     }
 }
 

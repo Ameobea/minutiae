@@ -1,0 +1,4 @@
+{
+  "rust.features": ["hybrid"],
+  "rust.no_default_features": true
+}
