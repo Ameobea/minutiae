@@ -3,6 +3,12 @@ authors = ["Casey Primozic <me@ameo.link>"]
 name = "colony"
 version = "0.1.0"
 
+[lib]
+
+[[bin]]
+name = "server"
+path = "src/server.rs"
+
 [dependencies]
 serde = "1.0.27"
 serde_derive = "1.0.27"

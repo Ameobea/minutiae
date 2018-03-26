@@ -2,7 +2,7 @@
 
 #![allow(unused_features)]
 
-#![feature(associated_type_defaults, conservative_impl_trait, integer_atomics, step_trait, test)]
+#![feature(associated_type_defaults, conservative_impl_trait, entry_or_default, integer_atomics, step_trait, test)]
 
 extern crate test;
 extern crate num_cpus;

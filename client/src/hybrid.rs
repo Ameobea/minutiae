@@ -2,21 +2,48 @@
 //! This is useful for simulations that have highly abstractable actions that affect multiple pixels.  It requires that
 //! the client maintains a full copy of the universe's state including cell and entity states.
 
+use std::borrow::Cow;
+
 use minutiae::prelude::*;
 use minutiae::server::*;
+use minutiae::universe::Into2DIndex;
 use uuid::Uuid;
 
 use super::{Client, ClientState, GenClient, Tys};
 
-pub struct HybridClient<T: Tys> where T::ServerMessage: ServerMessage<T::Snapshot> {
+pub struct HybridClient<T: Tys> where
+    T::ServerMessage: ServerMessage<T::Snapshot>,
+    T::I: Into2DIndex,
+    T::Snapshot: Universe<T::C, T::E, T::M, Coord=T::I>,
+{
+    color_calculator: fn(
+        cell: &Cell<T::C>,
+        entity_indexes: &[usize],
+        entity_container: &EntityContainer<T::C, T::E, T::M, T::I>
+    ) -> (u8, u8, u8),
     universe: T::Snapshot,
+    universe_size: usize,
     state: ClientState<T::Snapshot, T::ServerMessage>,
-    pixbuf: Vec<[u8; 4]>,
+    pixbuf: Vec<u8>,
 }
 
-impl<T: Tys> HybridClient<T> where T::ServerMessage: ServerMessage<T::Snapshot> {
+impl<T: Tys> HybridClient<T> where
+    T::ServerMessage: ServerMessage<T::Snapshot>,
+    T::I: Into2DIndex,
+    T::Snapshot: Universe<T::C, T::E, T::M, Coord=T::I>,
+{
     fn apply_snap_inner(&mut self, snap: T::Snapshot) {
         self.universe = snap;
+        // Generate content for the inner pixel buffer using the universe
+        for universe_index in (0..self.pixbuf.len()).step_by(4) {
+            let native_coord: T::I = <T::I as Into2DIndex>::from_2d_index(self.universe_size, universe_index);
+            let cell: Cow<Cell<T::C>> = self.universe.get_cell(native_coord).unwrap();;
+            let entity_indexes = self.universe.get_entities().get_entities_at(native_coord);
+            // let new_color = (self.color_calculator)(cell.as_ref(), entity_indexes, self.universe.get_entities());
+            self.pixbuf[(universe_index * 4) + 0] = 150u8;//new_color.0;
+            self.pixbuf[(universe_index * 4) + 1] = 150u8;//new_color.1;
+            self.pixbuf[(universe_index * 4) + 2] = 150u8;//new_color.2;//, new_color.0[1], new_color.0[2], 255];
+        }
     }
 }
 
@@ -24,6 +51,9 @@ impl<
     T: Tys<ServerMessage=HybridServerMessage<T>> + 'static
 > Client<T> for HybridClient<T> where
     T::ServerMessage: ServerMessage<T::Snapshot>,
+    T::Snapshot: Universe<T::C, T::E, T::M, Coord=T::I>,
+    T::I: Into2DIndex,
+    T::I: Into2DIndex,
     T::Snapshot: Clone,
     T::V: Clone,
 {
@@ -51,6 +81,8 @@ impl<
     T: Tys<ServerMessage=HybridServerMessage<T>> + 'static
 > GenClient for HybridClient<T> where
     <T as Tys>::ServerMessage: ServerMessage<<T as Tys>::Snapshot>,
+    T::Snapshot: Universe<T::C, T::E, T::M, Coord=T::I>,
+    T::I: Into2DIndex,
     T::V: Clone,
     T::Snapshot: Clone
 {
@@ -67,7 +99,8 @@ impl<
     }
 
     fn create_snapshot_request(&self) -> Vec<u8> {
-        ThinClientMessage::create_snapshot_request(self.get_uuid())
+        debug("Creating binary snapshot request message...");
+        HybridClientMessage::create_snapshot_request(self.get_uuid())
             .bin_serialize()
             .unwrap()
     }
@@ -75,15 +108,26 @@ impl<
 
 impl<T: Tys> HybridClient<T> where
     <T as Tys>::ServerMessage: ServerMessage<<T as Tys>::Snapshot>,
+    T::Snapshot: Universe<T::C, T::E, T::M, Coord=T::I>,
+    T::I: Into2DIndex,
     T::V: Clone,
     T::Snapshot: Clone,
     T::Snapshot: Universe<T::C, T::E, T::M, Coord=T::I>,
 {
-    pub fn new(universe_size: usize) -> HybridClient<T> {
+    pub fn new(
+        universe_size: usize,
+        color_calculator: fn(
+            cell: &Cell<T::C>,
+            entity_indexes: &[usize],
+            entity_container: &EntityContainer<T::C, T::E, T::M, T::I>
+        ) -> (u8, u8, u8),
+    ) -> HybridClient<T> {
         HybridClient {
+            universe_size,
+            color_calculator,
             state: ClientState::new(),
             universe: T::Snapshot::empty(),
-            pixbuf: vec![[0u8; 4]; universe_size * universe_size],
+            pixbuf: vec![0u8; universe_size * universe_size * 4],
         }
     }
 }

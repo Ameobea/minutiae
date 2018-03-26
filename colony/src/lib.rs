@@ -13,29 +13,30 @@ use std::sync::atomic::AtomicU32;
 use minutiae::prelude::*;
 use minutiae::driver::BasicDriver;
 use minutiae::driver::middleware::MinDelay;
-use minutiae::server::ColorServer;
-use minutiae::server::Server;
+use minutiae::server::HybridServer;
+// use minutiae::server::Server;
+use minutiae::server::Tys;
+use minutiae::server::Event;
+use minutiae::server::HybridServerMessage;
 use minutiae::util::Color;
 
-mod engine;
-mod entity_driver;
-mod sparse_universe;
-mod world_generator;
+pub mod engine;
+pub mod entity_driver;
+pub mod sparse_universe;
+pub mod world_generator;
 
 use sparse_universe::{P2D, Sparse2DUniverse, UniverseIterator};
 use world_generator::WorldGenerator;
 
-pub const UNIVERSE_SIZE: usize = 100_000;
-
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum CS {
-    __placeholder,
-    __placeholder2,
+    Empty,
+    Color(Color),
 }
 
 impl Default for CS {
     fn default() -> Self {
-        CS::__placeholder
+        CS::Empty
     }
 }
 
@@ -48,7 +49,7 @@ pub enum ES {
 
 #[derive(Clone, Default, Copy, Serialize, Deserialize)]
 pub struct MES {
-    __placeholder: (),
+    __placeholder: usize,
 }
 
 impl MutEntityState for MES{}
@@ -69,29 +70,40 @@ pub enum EA {
 
 impl EntityAction<CS, ES> for EA {}
 
-fn color_calculator(
+pub fn color_calculator(
     cell: &Cell<CS>,
     entity_indexes: &[usize],
     entity_container: &EntityContainer<CS, ES, MES, P2D>
-) -> Color {
-    Color([0u8, 0u8, 0u8])
+) -> (u8, u8, u8) {
+    match cell.state {
+        CS::Empty => (0, 0, 0),
+        CS::Color(color) => (color.0[0], color.0[1], color.0[2])
+    }
 }
 
-fn main() {
-    let universe = sparse_universe::Sparse2DUniverse::new(WorldGenerator);
-    let driver = BasicDriver;
+#[derive(Clone, Copy)]
+pub struct ColonyTys;
 
-    let engine = engine::get_engine();
+impl Tys for ColonyTys {
+    type C = CS;
+    type E = ES;
+    type M = MES;
+    type CA = CA;
+    type EA = EA;
+    type I = P2D;
+    type U = Sparse2DUniverse<CS, ES, MES, WorldGenerator>;
+    type V = ColonyEvent;
+    type Snapshot = Self::U;
+    type ServerMessage = HybridServerMessage<Self>;
+}
 
-    let colorserver = ColorServer::new(
-        color_calculator,
-        |start, end| UniverseIterator::new(start, end),
-        P2D { x: 0, y: 0 },
-        P2D { x: 500, y: 500 }
-    );
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum ColonyEvent {
+    Splat(Color),
+}
 
-    driver.init(universe, engine::get_engine(), &mut [
-        Box::new(Server::new("0.0.0.0:7037", colorserver, Arc::new(AtomicU32::new(0)))),
-        Box::new(MinDelay::from_tps(20.)),
-    ]);
+impl Event<ColonyTys> for ColonyEvent {
+    fn apply(&self, universe: &mut <ColonyTys as Tys>::U) {
+        // TODO
+    }
 }

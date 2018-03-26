@@ -195,3 +195,9 @@ impl<
         &self.cells
     }
 }
+
+pub trait Into2DIndex {
+    fn into_2d_index(self, universe_size: usize) -> usize;
+
+    fn from_2d_index(universe_size: usize, universe_index: usize) -> Self;
+}

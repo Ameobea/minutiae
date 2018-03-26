@@ -132,8 +132,10 @@ impl<
                     }
                 };
 
+                println!("Handling message from client...");
                 match self.logic.handle_client_message(Arc::clone(&self.seq), &client_msg) {
                     Some(msgs) => {
+                        println!("Got messages from server logic; transmitting to client...");
                         // serialize and transmit the messages to the client
                         for msg in msgs {
                             let serialized: Vec<u8> = msg.bin_serialize().expect("Unable to send message to client!");

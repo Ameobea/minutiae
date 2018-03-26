@@ -3,6 +3,7 @@
 //! at a time, such as translating every entity in the universe or removing entities en-masse.
 
 use std::cmp::{Ord, Ordering};
+use std::collections::HashMap;
 use std::fmt::{self, Debug, Formatter};
 use std::marker::PhantomData;
 use std::sync::{Arc, RwLock};
@@ -36,13 +37,13 @@ pub enum HybridServerMessageContents<T: Tys> {
     __phantom_T(PhantomData<T>),
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Clone, Deserialize)]
 pub struct HybridClientMessage {
     pub client_id: Uuid,
     pub contents: HybridClientMessageContents,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, Clone, Deserialize)]
 pub enum HybridClientMessageContents {
     RequestSnapshot,
 }
@@ -129,9 +130,15 @@ impl<T: Tys> HybridServerMessage<T> where T::Snapshot: Clone, T::V: Clone {
 }
 
 #[derive(Clone)]
-pub struct HybridServer<T: Tys> {
-    pub pending_snapshot: bool,
+pub struct HybridServer<'a, T: Tys> where
+    T::Snapshot: Clone,
+    T::V: Clone,
+    T::U: 'a,
+{
     pub seq: Arc<AtomicU32>,
+    pub pending_snapshot_requests: Vec<Uuid>,
+    pub queued_user_messages: HashMap<Uuid, Vec<HybridServerMessageContents<T>>>,
+    universe: Option<&'a T::U>,
     pub event_generator: fn(
         &mut T::U,
         &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
@@ -143,7 +150,10 @@ pub struct HybridServer<T: Tys> {
     pub entity_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
 }
 
-impl<T: Tys<ServerMessage=HybridServerMessage<T>>> ServerLogic<T, HybridClientMessage> for HybridServer<T> where
+impl<
+    'a,
+    T: Tys<ServerMessage=HybridServerMessage<T>
+>> ServerLogic<T, HybridClientMessage> for HybridServer<'a, T> where
     T::C: Clone,
     T::E: Clone,
     T::M: Clone,
@@ -152,18 +162,19 @@ impl<T: Tys<ServerMessage=HybridServerMessage<T>>> ServerLogic<T, HybridClientMe
     T::CA: Clone,
     T::EA: Clone,
     T::V: Clone + Send,
-    T::Snapshot: Serialize + for<'de> Deserialize<'de> + Clone + Send,
+    T::Snapshot: Serialize + for<'de> Deserialize<'de> + Clone + Send + From<T::U>,
 {
     fn tick(
-        &mut self, universe: &mut T::U
+        &mut self,
+        universe: &mut T::U
     ) -> Option<Vec<HybridServerMessage<T>>> {
-        let mut pending_messages: Option<Vec<T::V>> = None;
-        if self.pending_snapshot {
-            self.pending_snapshot = false;
-            pending_messages = Some(vec![]);
+        // Process any snapshot requests, queueing up the snapshots for later sending
+        for user_uuid in self.pending_snapshot_requests.drain(..) {
+            let user_mailbox = self.queued_user_messages.entry(user_uuid).or_default();
+            user_mailbox.push(HybridServerMessageContents::Snapshot(universe.clone().into()));
         }
 
-        self.seq.fetch_add(1, AtomicOrdering::Relaxed);
+        let pending_messages: Option<Vec<T::V>> = None;
 
         // use the user-defined logic to get the events to pass through to the clients.  The internal action buffers
         // are used as the sources for this.
@@ -200,14 +211,19 @@ impl<T: Tys<ServerMessage=HybridServerMessage<T>>> ServerLogic<T, HybridClientMe
             HybridClientMessageContents::RequestSnapshot => {
                 // don't have access to the universe, so we really can't send an accurate snapshot.  Instead,
                 // set a flag to send the message in the future.
-                self.pending_snapshot = true;
+                self.pending_snapshot_requests.push(message.client_id);
                 None
             },
         }
     }
 }
 
-impl<T: Tys> HybridServer<T> where OwnedAction<T::C, T::E, T::CA, T::EA, T::I> : Clone {
+impl<'a, T: Tys> HybridServer<'a, T> where
+    OwnedAction<T::C, T::E, T::CA, T::EA, T::I>: Clone,
+    T::V: Clone,
+    T::Snapshot: Clone,
+    T::U: 'a,
+{
     /// Takes the action handlers for the engine and hooks them, getting an intermediate view of the actions
     /// so that they can be transmitted to the client before handling them on the client side.
     pub fn hook_handler(
@@ -265,8 +281,10 @@ impl<T: Tys> HybridServer<T> where OwnedAction<T::C, T::E, T::CA, T::EA, T::I> :
         ) -> Option<Vec<T::V>>
     ) -> Self {
         HybridServer {
-            pending_snapshot: false,
             seq: Arc::new(AtomicU32::new(0)),
+            pending_snapshot_requests: Vec::new(),
+            queued_user_messages: HashMap::new(),
+            universe: None,
             event_generator,
             self_actions: Arc::new(RwLock::new(Vec::new())),
             cell_actions: Arc::new(RwLock::new(Vec::new())),

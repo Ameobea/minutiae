@@ -63,6 +63,7 @@ mergeInto(LibraryManager.library, {
   send_client_message: function(ptr, len) {
     // create a typed array view into Emscripten's memory at the given index and send it over the websocket
     var buf = new Uint8ClampedArray(HEAP8.buffer, ptr, len);
+    console.log('Sending client message on the JS side...');
     socket.send(buf);
   },
 

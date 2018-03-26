@@ -6,12 +6,16 @@ use super::*;
 #[derive(Clone)]
 pub struct WorldGenerator;
 
-impl<I: Ord> CellGenerator<CS, ES, MES, I> for WorldGenerator {
-    fn gen_cell(&self, universe_index: I) -> Cell<CS> {
-        Cell { state: CS::__placeholder }
+impl CellGenerator<CS, ES, MES, P2D> for WorldGenerator {
+    fn gen_cell(P2D {x, y}: P2D) -> Cell<CS> {
+        if x % 40 == 0 || y % 40 == 10 {
+            Cell { state: CS::Empty }
+        } else {
+            Cell { state: CS::Color(Color([(x % 10) as u8, (y % 10) as u8, ((x+y) % 50) as u8])) }
+        }
     }
 
-    fn gen_initial_entities(&self, universe_index: I) -> Vec<Entity<CS, ES, MES>> {
+    fn gen_initial_entities(universe_index: P2D) -> Vec<Entity<CS, ES, MES>> {
         Vec::new()
     }
 }

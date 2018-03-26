@@ -5,8 +5,9 @@ use std::collections::btree_map::Entry;
 use std::marker::PhantomData;
 
 use minutiae::prelude::*;
-use minutiae::universe::{CellContainer, ContiguousUniverse};
+use minutiae::universe::{CellContainer, ContiguousUniverse, Into2DIndex};
 use minutiae::util::get_coords;
+#[cfg(test)]
 use test;
 
 /// A world generator that can generate the initial values for arbitrary cells on demand without
@@ -17,18 +18,27 @@ pub trait CellGenerator<
     MES: MutEntityState,
     I: Ord,
 > {
-    fn gen_cell(&self, universe_index: I) -> Cell<CS>;
+    fn gen_cell(universe_index: I) -> Cell<CS>;
 
-    fn gen_initial_entities(&self, universe_index: I) -> Vec<Entity<CS, ES, MES>>;
+    fn gen_initial_entities(universe_index: I) -> Vec<Entity<CS, ES, MES>>;
 }
+
+struct StatelessGenerator<
+    CS: CellState,
+    ES: EntityState<CS>,
+    MES: MutEntityState,
+    I: Ord,
+    G: CellGenerator<CS, ES, MES, I>
+>(PhantomData<CS>, PhantomData<ES>, PhantomData<MES>, PhantomData<I>, PhantomData<G>);
 
 impl<
     CS: CellState,
     ES: EntityState<CS>,
     MES: MutEntityState,
     I: Ord,
-> Generator<CS, ES, MES> for CellGenerator<CS, ES, MES, I> {
-    fn gen(&mut self, conf: &UniverseConf) -> (Vec<Cell<CS>>, Vec<Vec<Entity<CS, ES, MES>>>) {
+    G: CellGenerator<CS, ES, MES, I>
+> Generator<CS, ES, MES> for StatelessGenerator<CS, ES, MES, I, G> {
+    fn gen(&mut self, _conf: &UniverseConf) -> (Vec<Cell<CS>>, Vec<Vec<Entity<CS, ES, MES>>>) {
         (Vec::new(), Vec::new())
     }
 }
@@ -68,9 +78,21 @@ impl PartialOrd for P2D {
     }
 }
 
+impl Into2DIndex for P2D {
+    fn into_2d_index(self, universe_size: usize) -> usize {
+        self.get_index(universe_size)
+    }
+
+    fn from_2d_index(universe_size: usize, universe_index: usize) -> Self {
+        let (x, y) = get_coords(universe_index, universe_size);
+        P2D { x, y }
+    }
+}
+
 /// Defines a sparse universe that only contains modifications made to the universe from its initial
 /// state as defined by the world generator.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(bound = "CS: for<'d> ::serde::Deserialize<'d>")]
 pub struct Sparse2DUniverse<
     CS: CellState,
     ES: EntityState<CS>,
@@ -78,10 +100,10 @@ pub struct Sparse2DUniverse<
     G: CellGenerator<CS, ES, MES, P2D>,
 > {
     data: BTreeMap<P2D, Cell<CS>>,
-    gen: G,
     entities: EntityContainer<CS, ES, MES, P2D>,
     __phantom_es: PhantomData<ES>,
     __phantom_mes: PhantomData<MES>,
+    __phantom_g: PhantomData<G>,
 }
 
 impl<
@@ -90,13 +112,30 @@ impl<
     MES: MutEntityState,
     G: CellGenerator<CS, ES, MES, P2D>,
 > Sparse2DUniverse<CS, ES, MES, G> {
-    pub fn new(gen: G) -> Self {
+    pub fn new() -> Self {
         Sparse2DUniverse {
             data: BTreeMap::new(),
-            gen,
             entities: EntityContainer::new(),
             __phantom_es: PhantomData,
             __phantom_mes: PhantomData,
+            __phantom_g: PhantomData,
+        }
+    }
+}
+
+impl<
+    CS: CellState,
+    ES: EntityState<CS>,
+    MES: MutEntityState,
+    G: CellGenerator<CS, ES, MES, P2D>,
+> Default for Sparse2DUniverse<CS, ES, MES, G> {
+    fn default() -> Self {
+        Sparse2DUniverse {
+            data: BTreeMap::new(),
+            entities: EntityContainer::new(),
+            __phantom_es: PhantomData,
+            __phantom_mes: PhantomData,
+            __phantom_g: PhantomData,
         }
     }
 }
@@ -112,7 +151,7 @@ impl<
     fn get_cell(&self, coord: Self::Coord) -> Option<Cow<Cell<CS>>> {
         self.data.get(&coord)
             .map(|c| Cow::Borrowed(c))
-            .or(Some(Cow::Owned(self.gen.gen_cell(coord))))
+            .or(Some(Cow::Owned(G::gen_cell(coord))))
     }
 
     unsafe fn get_cell_unchecked(&self, coord: Self::Coord) -> Cow<Cell<CS>> {
@@ -122,7 +161,7 @@ impl<
     fn set_cell(&mut self, coord: Self::Coord, new_state: CS) {
         match self.data.entry(coord) {
             Entry::Occupied(mut occupied) => {
-                let default_cell = self.gen.gen_cell(coord);
+                let default_cell = G::gen_cell(coord);
 
                 // TODO: Investigate if doing these checks every time (as opposed to just the
                 // initial time we set a value) is worth it.
@@ -134,7 +173,7 @@ impl<
             },
             // TODO: Investigate penalty of generating these default cells and investigate whether or
             // not this comparison is worth the memory gained.
-            Entry::Vacant(empty) => if new_state != self.gen.gen_cell(coord).state {
+            Entry::Vacant(empty) => if new_state != G::gen_cell(coord).state {
                 empty.insert(Cell { state: new_state });
             }
         }
@@ -151,6 +190,10 @@ impl<
     fn get_entities_mut<'a>(&'a mut self) -> &'a mut EntityContainer<CS, ES, MES, P2D> {
         &mut self.entities
     }
+
+    fn empty() -> Self {
+        Self::default()
+    }
 }
 
 impl<
@@ -163,7 +206,7 @@ impl<
     fn get_cell_direct(&self, coord: P2D) -> Cell<CS> {
         self.data.get(&coord)
             .map(|c| c.clone())
-            .unwrap_or(self.gen.gen_cell(coord))
+            .unwrap_or(G::gen_cell(coord))
     }
 }
 
@@ -237,11 +280,11 @@ fn sparse_universe_access(bencher: &mut test::Bencher) {
     struct DummyGen;
 
     impl CellGenerator<CS, ES, MES, P2D> for DummyGen {
-        fn gen_cell(&self, _: P2D) -> Cell<CS> {
+        fn gen_cell(_: P2D) -> Cell<CS> {
             Cell { state: CS::default() }
         }
 
-        fn gen_initial_entities(&self, _: P2D) -> Vec<Entity<CS, ES, MES>> {
+        fn gen_initial_entities(_: P2D) -> Vec<Entity<CS, ES, MES>> {
             Vec::new()
         }
     }

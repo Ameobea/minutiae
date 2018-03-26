@@ -41,7 +41,7 @@ pub trait Tys : Clone + Copy + Send {
     type EA: EntityAction<Self::C, Self::E>;
     type I: Ord + Copy;
     type U: Universe<Self::C, Self::E, Self::M, Coord=Self::I>;
-    type V: Event<Self>;
+    type V: Event<Self> = ();
 
     #[cfg(not(any(feature = "thin", feature = "hybrid", feature = "fat")))]
     type Snapshot = ();
@@ -55,7 +55,17 @@ pub trait Tys : Clone + Copy + Send {
     #[cfg(feature = "fat")]
     type Snapshot = (); // TODO
 
-    type ServerMessage: ServerMessage<Self::Snapshot>;
+    #[cfg(not(any(feature = "thin", feature = "hybrid", feature = "fat")))]
+    type ServerMessage: ServerMessage<Self::Snapshot> = ();
+
+    #[cfg(feature = "thin")]
+    type ServerMessage: ServerMessage<Self::Snapshot> = ThinServerMessage;
+
+    #[cfg(feature = "hybrid")]
+    type ServerMessage: ServerMessage<Self::Snapshot> = HybridServerMessage<Self::Snapshot>;
+
+    #[cfg(feature = "fat")]
+    type ServerMessage: ServerMessage<Self::Snapshot> = (); // TODO
 }
 
 /// A message that is passed over the websocket between the server and a client.

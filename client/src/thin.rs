@@ -14,7 +14,7 @@ use super::{Client, ClientState, GenClient, Tys, debug};
 pub struct ThinClient<T: Tys> {
     pub universe: Vec<[u8; 4]>,
     pub state: ClientState<Vec<Color>, ThinServerMessage>,
-    __phantom_T: PhantomData<T>,
+    __phantom_t: PhantomData<T>,
 }
 
 impl<T: Tys> ThinClient<T> {
@@ -23,7 +23,7 @@ impl<T: Tys> ThinClient<T> {
             // TODO: Investigate if this is necessary
             universe: vec![[0u8, 0u8, 0u8, 255u8]; universe_size * universe_size * 4],
             state: ClientState::new(),
-            __phantom_T: PhantomData,
+            __phantom_t: PhantomData,
         }
     }
 

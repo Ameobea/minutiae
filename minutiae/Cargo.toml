@@ -18,8 +18,6 @@ optional = true
 version = "1.0.0"
 
 [dependencies.flate2]
-default-features = false
-features = ["zlib"]
 optional = true
 version = "1.0.1"
 

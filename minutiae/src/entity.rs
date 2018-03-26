@@ -27,10 +27,10 @@ pub trait EntityState<C: CellState>:Clone {}
 /// Entity state that is private to the entity.  It is not visible to other entities or to the engine but is mutable
 /// during the entity driver and can be used to hold things such as PRNGs etc.
 #[cfg(feature = "serde")]
-pub trait MutEntityState:Clone + Copy + Default + Serialize + for<'d> Deserialize<'d> {}
+pub trait MutEntityState: Clone + Copy + Default + Serialize + for<'d> Deserialize<'d> {}
 
 #[cfg(not(feature = "serde"))]
-pub trait MutEntityState:Clone + Default {}
+pub trait MutEntityState: Clone + Default {}
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(bound = "C: for<'d> Deserialize<'d>"))]

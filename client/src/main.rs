@@ -1,10 +1,12 @@
 //! Minutiae simulation client.  See README.md for more information.
 
-#![feature(associated_type_defaults, conservative_impl_trait, nll)]
+#![feature(associated_type_defaults, conservative_impl_trait, iterator_step_by, nll)]
 
 extern crate minutiae;
 extern crate serde;
 extern crate uuid;
+
+extern crate colony;
 
 use std::ffi::CString;
 use std::marker::PhantomData;
@@ -17,6 +19,8 @@ use uuid::Uuid;
 
 use minutiae::server::*;
 pub use minutiae::server::Tys;
+
+use colony::{color_calculator, ColonyTys};
 
 extern {
     /// Used to initialize the websocket connection and start receiving+processing messages from the server
@@ -181,8 +185,9 @@ pub unsafe extern "C" fn request_snapshot() {
 }
 
 pub fn main() {
-    // TODO: Initialize the `GenClient`
-
+    // Initialize the global `GenClient` with a client instance
+    let client: hybrid::HybridClient<ColonyTys> = hybrid::HybridClient::new(800, color_calculator);
+    unsafe { CLIENT_WRAPPER = Box::into_raw(Box::new(Box::new(client))) };
 
     // create the websocket connection and start handling server messages
     println!("Initializing WS connection from the Rust side...");
