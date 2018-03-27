@@ -8,7 +8,9 @@
 use std::cmp::Ordering;
 use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 
-#[allow(unused_imports)]
+use futures::Future;
+use futures::future::ok;
+#[cfg(test)]
 use test;
 use uuid::Uuid;
 
@@ -149,8 +151,10 @@ impl<
     T: Tys<ServerMessage=ThinServerMessage>,
     I: ExactSizeIterator<Item=T::I> + Clone + 'static,
 > ServerLogic<T, ThinClientMessage> for ColorServer<T, I> where
-    T::I: Clone + Copy + Ord + Clone + 'static,
+    T::I: Clone + Copy + Ord + Clone + Sync + 'static,
     ThinServerMessage: ServerMessage<<T as Tys>::Snapshot>,
+    T::Snapshot: Clone,
+    T::V: Clone,
 {
     fn tick(&mut self, universe: &mut T::U) -> Option<Vec<ThinServerMessage>> {
         // TODO: Create an option for making this parallel because it's a 100% parallelizable task
@@ -183,17 +187,17 @@ impl<
         &mut self,
         seq: Arc<AtomicU32>,
         client_message: &ThinClientMessage
-    ) -> Option<Vec<ThinServerMessage>> {
+    ) -> Box<Future<Item=Option<ThinServerMessage>, Error=!>> {
         match client_message.content {
             ThinClientMessageContent::SendSnapshot => {
                 // create the snapshot by cloning the colors from the server.
                 let snap: Vec<Color> = self.colors.read().unwrap().clone();
-                Some(vec![ThinServerMessage {
+                box ok(Some(ThinServerMessage {
                     seq: seq.load(AtomicOrdering::Relaxed),
                     contents: ThinServerMessageContents::Snapshot(snap),
-                }])
+                }))
             },
-            _ => None, // TOOD
+            _ => box ok(None), // TOOD
         }
     }
 }

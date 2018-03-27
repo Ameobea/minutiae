@@ -8,22 +8,19 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::thread;
 
 use futures::{Future, Sink, Stream};
+use futures::stream::{iter_ok, SplitSink};
 use futures::sync::mpsc;
 use futures::future::ok;
 use futures_cpupool::CpuPool;
 use tokio_core::reactor::{Handle, Core};
-use websocket::message::{Message as WsMessage, OwnedMessage as OwnedWsMessage};
+use websocket::message::OwnedMessage as OwnedWsMessage;
 use websocket::result::WebSocketError;
-use websocket::server::InvalidConnection;
 use websocket::async::Server as AsyncWsServer;
+use websocket::async::{MessageCodec, TcpStream};
+use websocket::client::async::Framed;
 
-use universe::Universe;
-use cell::CellState;
-use entity::{EntityState, MutEntityState};
-use action::{CellAction, EntityAction};
 use engine::Engine;
 use driver::middleware::Middleware;
 
@@ -54,14 +51,18 @@ impl Iterator for Counter {
 	}
 }
 
+type WebsocketClientSink = SplitSink<Framed<TcpStream, MessageCodec<OwnedWsMessage>>>;
+
 #[derive(Clone)]
 pub struct Server<
     T: Tys,
     CM: Message,
     L: ServerLogic<T, CM> + Clone,
 > {
-    pub seq: Arc<AtomicU32>,
-    pub logic: Arc<L>,
+    seq: Arc<AtomicU32>,
+    logic: Arc<L>,
+    connection_map: Arc<RwLock<HashMap<Id, WebsocketClientSink>>>,
+    event_loop_handle: Handle,
     __phantom_T: PhantomData<T>,
     __phantom_CM: PhantomData<CM>,
 }
@@ -76,8 +77,6 @@ fn spawn_future<
 	    .map(move |_| println!("{}: Finished.", desc));
 	handle.spawn(mapped_future);
 }
-
-fn process_message(id: u32, msg: &OwnedWsMessage) ->
 
 fn handle_client_message<
     T: Tys,
@@ -109,7 +108,7 @@ fn handle_client_message<
             };
 
             // Handle the received message with the provided server logic
-            box (*logic).handle_client_message(seq, &client_msg)
+            box logic.handle_client_message(seq, &client_msg)
                 .and_then(|opt| Ok(opt.map(|server_msg| {
                     OwnedWsMessage::Binary(server_msg
                         .bin_serialize()
@@ -125,72 +124,109 @@ fn get_ws_server_future<
     T: Tys,
     CM: Message + Send,
     L: ServerLogic<T, CM> + Clone + Send + 'static,
->(seq: Arc<AtomicU32>, logic: Arc<L>) {
-    // bind to the server
+>(
+    seq: Arc<AtomicU32>,
+    logic: Arc<L>
+) -> (
+    Handle,
+    Arc<RwLock<HashMap<Id, WebsocketClientSink>>>,
+) where
+    T::ServerMessage: 'static,
+{
+    // Set up Tokio stuff
     let mut core = Core::new().unwrap();
     let handle = core.handle();
-    let server = AsyncWsServer::bind("0.0.0.0:7037", &handle).unwrap();
+    let handle_clone = handle.clone();
     let pool = Rc::new(CpuPool::new_num_cpus());
     let remote = core.remote();
-	let connections = Arc::new(RwLock::new(HashMap::new()));
+
+    // Connection map that matches connection IDs with the futures sink that
+    // can be used to send messages to them individually
+	let connection_map = Arc::new(RwLock::new(HashMap::new()));
+    let connection_map_clone = Arc::clone(&connection_map);
+    // Channel which can be used to send the client sink out
 	let (receive_channel_out, receive_channel_in) = mpsc::unbounded();
     let conn_id = Rc::new(RefCell::new(Counter::new()));
-	let connections_inner = connections.clone();
+
+    // Initialize the websocket server
+    let server = AsyncWsServer::bind("0.0.0.0:7037", &handle).unwrap();
 
     let connection_handler = server.incoming()
         // We don't want to save the stream if it drops
         .map_err(|_| ())
-        .for_each(|(upgrade, addr)| {
-            let connections_inner = connections_inner.clone();
+        .for_each(move |(upgrade, addr)| {
+            let connection_map = connection_map_clone.clone();
             println!("Got a connection from: {}", addr);
             let channel = receive_channel_out.clone();
-            let handle_inner = handle.clone();
-            let conn_id = conn_id.clone();
+            let handle = handle_clone.clone();
+            let handle_clone = handle.clone();
+            let conn_id_clone = conn_id.clone();
 
             // accept the request to be a ws connection if it does
             let f = upgrade
-                .use_protocol("rust-websocket")
+                .use_protocol("rust-websocket") // TODO: Check if this is a problem
                 .accept()
                 .and_then(move |(framed, _)| {
-                    let (sink, stream) = framed.split();
-                    let id = conn_id
+                    let (sink, client_message_stream) = framed.split();
+                    // Create an ID for this client using our counter
+                    let client_id = conn_id_clone
                         .borrow_mut()
                         .next()
                         .expect("maximum amount of ids reached");
-                    let f = channel.send((id, stream));
-                    spawn_future(f, "Senk stream to connection pool", &handle_inner);
-                    connections_inner.write().unwrap().insert(id, sink);
+
+                    // Transfer out the stream that contains messages from the client and
+                    // handle it on the CPU Pool
+                    let f = channel.send((client_id, client_message_stream));
+                    spawn_future(f, "Sent stream to connection pool", &handle);
+                    // Insert the new connection into the connection map
+                    connection_map
+                        .write()
+                        .unwrap()
+                        .insert(client_id, sink);
+
                     Ok(())
-
-
                 });
 
-            spawn_future(f, "Client Status", &handle);
+            spawn_future(f, "Client Status", &handle_clone);
             Ok(())
         });
 
     // Handle receiving messages from a client
 	let remote_inner = remote.clone();
-	let receive_handler = pool.spawn_fn(|| {
-		receive_channel_in.for_each(move |(id, stream)| {
+	pool.spawn_fn(move || {
+		receive_channel_in.for_each(move |(id, client_message_stream)| {
 			remote_inner.spawn(move |_| {
-                stream.for_each(move |msg| {
-                    process_message(id, &msg);
-                    Ok(())
-                }).map_err(|_| ())
+                client_message_stream
+                    .and_then(move |msg| {
+                        handle_client_message(msg, Arc::clone(&seq), Arc::clone(&logic))
+                    })
+                    .for_each(move |server_message_opt| match server_message_opt {
+                        Some(msg) => {
+                            // We have a message that needs to get sent back to the client
+                            Ok(()) // TODO
+                        },
+                        None => Ok(()),
+                    })
+                    .map_err(|_| ())
             });
 			Ok(())
 		})
 	});
 
+    // Spawn the server's logic future on the event loop
     core.run(connection_handler).unwrap();
+
+    (handle, connection_map)
 }
 
 impl<
     T: Tys,
     CM: Message + Send,
     L: ServerLogic<T, CM> + Clone + Send + 'static,
-> Server<T, CM, L> where Self: Clone {
+> Server<T, CM, L> where
+    Self: Clone,
+    T::ServerMessage: 'static,
+{
     pub fn new(
         ws_host: &'static str,
         logic: L,
@@ -198,13 +234,16 @@ impl<
     ) -> Box<Self> {
         let seq = Arc::new(AtomicU32::new(0));
         let logic = Arc::new(logic);
-        let f = get_ws_server_future(Arc::clone(&seq), Arc::clone(&logic));
-
-
+        let (event_loop_handle, connection_map) = get_ws_server_future(
+            Arc::clone(&seq),
+            Arc::clone(&logic)
+        );
 
         box Server {
             seq,
             logic,
+            connection_map,
+            event_loop_handle,
             __phantom_CM: PhantomData,
             __phantom_T: PhantomData,
         }
@@ -219,6 +258,25 @@ impl<
     pub fn get_seq(&self) -> u32 {
         self.seq.load(Ordering::Relaxed)
     }
+
+    fn broadcast_messages(&self, server_msgs: &[T::ServerMessage]) {
+        let binary_messages: Vec<OwnedWsMessage> = server_msgs
+            .into_iter()
+            .map(|sm| OwnedWsMessage::Binary(sm.bin_serialize().unwrap()))
+            .collect();
+
+        for (client_id, server_msg_sink) in &*self.connection_map.read().unwrap() {
+            let binary_messages_stream = iter_ok::<_, ()>(binary_messages.clone());
+            let response_msg_future = binary_messages_stream
+                .map_err(|_| -> WebSocketError { unreachable!() })
+                .forward(*server_msg_sink)
+                .map_err(|ws_err| println!("Error while broadcasting message to client: {:?}", ws_err))
+                .map(|res| ());
+
+            // Spawn the response future on the event loop
+            self.event_loop_handle.spawn(response_msg_future);
+        }
+    }
 }
 
 impl<
@@ -229,13 +287,8 @@ impl<
 > Middleware<T::C, T::E, T::M, T::CA, T::EA, T::U, N> for Box<Server<T, CM, L>> {
     fn after_render(&mut self, universe: &mut T::U) {
         if let Some(msgs) = self.logic.tick(universe) {
-            for msg in msgs {
-                // convert the message into binary format and then send it over the websocket
-                match self.ws_broadcaster.send::<&[u8]>(msg.bin_serialize().unwrap().as_slice().into()) {
-                    Err(err) => println!("Error while sending message over the websocket: {:?}", err),
-                    _ => (),
-                }
-            }
+            // Broadcast to all connected clients
+            self.broadcast_messages(&msgs);
         }
         self.seq.fetch_add(1, Ordering::Relaxed);
     }

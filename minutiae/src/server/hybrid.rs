@@ -3,17 +3,16 @@
 //! at a time, such as translating every entity in the universe or removing entities en-masse.
 
 use std::cmp::{Ord, Ordering};
-use std::collections::HashMap;
 use std::fmt::{self, Debug, Formatter};
 use std::marker::PhantomData;
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 
+use futures::Future;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
-use entity::MutEntityState;
-use action::{EntityAction, OwnedAction};
+use action::OwnedAction;
 
 use super::{ServerMessage, ServerLogic, Tys, ClientMessage};
 
@@ -128,15 +127,11 @@ impl<T: Tys> HybridServerMessage<T> where T::Snapshot: Clone, T::V: Clone {
 }
 
 #[derive(Clone)]
-pub struct HybridServer<'a, T: Tys> where
+pub struct HybridServer<T: Tys> where
     T::Snapshot: Clone,
     T::V: Clone,
-    T::U: 'a,
 {
     pub seq: Arc<AtomicU32>,
-    pub pending_snapshot_requests: Vec<Uuid>,
-    pub queued_user_messages: HashMap<Uuid, Vec<HybridServerMessageContents<T>>>,
-    universe: Option<&'a T::U>,
     pub event_generator: fn(
         &mut T::U,
         &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
@@ -149,16 +144,15 @@ pub struct HybridServer<'a, T: Tys> where
 }
 
 impl<
-    'a,
     T: Tys<ServerMessage=HybridServerMessage<T>
->> ServerLogic<T, HybridClientMessage> for HybridServer<'a, T> where
-    T::C: Clone,
-    T::E: Clone,
-    T::M: Clone,
-    T::I: Serialize + for<'de> Deserialize<'de> + Clone,
-    T::U: Serialize + for<'de> Deserialize<'de> + Clone + Send,
-    T::CA: Clone,
-    T::EA: Clone,
+>> ServerLogic<T, HybridClientMessage> for HybridServer<T> where
+    T::C: Send + Sync + Clone,
+    T::E: Send + Sync + Clone,
+    T::M: Send + Sync + Clone,
+    T::I: Serialize + for<'de> Deserialize<'de> + Send + Sync + Clone,
+    T::U: Serialize + for<'de> Deserialize<'de> + Send + Sync + Clone,
+    T::CA: Send + Sync + Clone,
+    T::EA: Send + Sync + Clone,
     T::V: Clone + Send,
     T::Snapshot: Serialize + for<'de> Deserialize<'de> + Clone + Send + From<T::U>,
 {
@@ -166,12 +160,6 @@ impl<
         &mut self,
         universe: &mut T::U
     ) -> Option<Vec<HybridServerMessage<T>>> {
-        // Process any snapshot requests, queueing up the snapshots for later sending
-        for user_uuid in self.pending_snapshot_requests.drain(..) {
-            let user_mailbox = self.queued_user_messages.entry(user_uuid).or_default();
-            user_mailbox.push(HybridServerMessageContents::Snapshot(universe.clone().into()));
-        }
-
         let pending_messages: Option<Vec<T::V>> = None;
 
         // use the user-defined logic to get the events to pass through to the clients.  The internal action buffers
@@ -204,23 +192,19 @@ impl<
         &mut self,
         _seq: Arc<AtomicU32>,
         message: &HybridClientMessage
-    ) -> Option<Vec<HybridServerMessage<T>>> {
+    ) -> Box<Future<Item=Option<HybridServerMessage<T>>, Error=!>> {
         match message.contents {
             HybridClientMessageContents::RequestSnapshot => {
-                // don't have access to the universe, so we really can't send an accurate snapshot.  Instead,
-                // set a flag to send the message in the future.
-                self.pending_snapshot_requests.push(message.client_id);
-                None
+                unimplemented!(); // TODO
             },
         }
     }
 }
 
-impl<'a, T: Tys> HybridServer<'a, T> where
+impl<T: Tys> HybridServer<T> where
     OwnedAction<T::C, T::E, T::CA, T::EA, T::I>: Clone,
     T::V: Clone,
     T::Snapshot: Clone,
-    T::U: 'a,
 {
     /// Takes the action handlers for the engine and hooks them, getting an intermediate view of the actions
     /// so that they can be transmitted to the client before handling them on the client side.
@@ -280,9 +264,6 @@ impl<'a, T: Tys> HybridServer<'a, T> where
     ) -> Self {
         HybridServer {
             seq: Arc::new(AtomicU32::new(0)),
-            pending_snapshot_requests: Vec::new(),
-            queued_user_messages: HashMap::new(),
-            universe: None,
             event_generator,
             self_actions: Arc::new(RwLock::new(Vec::new())),
             cell_actions: Arc::new(RwLock::new(Vec::new())),
