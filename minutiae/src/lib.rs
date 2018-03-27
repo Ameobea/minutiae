@@ -2,13 +2,14 @@
 
 #![allow(unused_features)]
 
-#![feature(associated_type_defaults, conservative_impl_trait, entry_or_default, integer_atomics, step_trait, test)]
+#![feature(associated_type_defaults, box_syntax, conservative_impl_trait, entry_or_default, integer_atomics, never_type, nll, step_trait, test)]
 
 extern crate test;
 extern crate num_cpus;
 extern crate uuid;
 #[macro_use]
 extern crate lazy_static;
+extern crate futures;
 
 #[cfg(any(feature = "serde", feature = "client"))]
 extern crate serde;
@@ -26,7 +27,11 @@ extern crate flate2;
 extern crate gif;
 
 #[cfg(feature = "server")]
-extern crate ws;
+extern crate websocket;
+#[cfg(feature = "server")]
+extern crate tokio_core;
+#[cfg(feature = "server")]
+extern crate futures_cpupool;
 
 pub mod universe;
 pub mod container;

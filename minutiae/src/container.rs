@@ -1,7 +1,6 @@
 //! Declares container types that are used to provide abstracted access to data strucures within a universe.
 
 use std::collections::BTreeMap;
-use std::collections::btree_map::Entry;
 use std::mem;
 use std::ops::{Index, IndexMut};
 use std::usize;

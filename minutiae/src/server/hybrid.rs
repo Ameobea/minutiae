@@ -12,10 +12,8 @@ use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
-use universe::Universe;
-use cell::CellState;
-use entity::{EntityState, MutEntityState};
-use action::{CellAction, EntityAction, OwnedAction};
+use entity::MutEntityState;
+use action::{EntityAction, OwnedAction};
 
 use super::{ServerMessage, ServerLogic, Tys, ClientMessage};
 

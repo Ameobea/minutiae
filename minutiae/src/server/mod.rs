@@ -10,6 +10,7 @@ use bincode::{self, serialize_into, serialized_size};
 use flate2::Compression;
 use flate2::write::DeflateEncoder;
 use flate2::bufread::DeflateDecoder;
+use futures::Future;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
@@ -106,7 +107,7 @@ pub trait ClientMessage : Message {
 
 /// Implements serialization/deserialization for `self` that runs the compressed buffer through deflate compression/
 /// decompression in order to reduce the size of the serialized buffer.
-pub trait CompressedMessage : Sized + Send + PartialEq + Serialize {
+pub trait CompressedMessage: Sized + Send + PartialEq + Serialize {
     /// Encodes the message in binary format, compressing it in the process.
     fn do_serialize(&self) -> Result<Vec<u8>, String> {
         println!("Size of raw binary: {}", serialized_size(self).unwrap());
@@ -129,11 +130,16 @@ pub trait CompressedMessage : Sized + Send + PartialEq + Serialize {
     }
 }
 
-pub trait ServerLogic<T: Tys, CM: Message> : Sized + Clone {
-    // called every tick; the resulting messages are broadcast to every connected client.
+pub trait ServerLogic<T: Tys, CM: Message>: Sync {
+    /// Called every tick; the resulting messages are broadcast to every connected client.
     fn tick(&mut self, universe: &mut T::U) -> Option<Vec<T::ServerMessage>>;
-    // called for every message received from a client.
-    fn handle_client_message(&mut self, seq: Arc<AtomicU32>, &CM) -> Option<Vec<T::ServerMessage>>;
+    /// Called for every message received from a client; the resulting messages are broadcast to the
+    /// client that sent the message.
+    fn handle_client_message(
+        &mut self,
+        seq: Arc<AtomicU32>,
+        &CM
+    ) -> Box<Future<Item=Option<T::ServerMessage>, Error=!>>;
 }
 
 impl<'d, T> CompressedMessage for T where T:Debug + Eq + CompressedMessage, for<'de> Self: Deserialize<'de> {}

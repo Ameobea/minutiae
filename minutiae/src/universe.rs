@@ -92,7 +92,6 @@ impl<
     ) -> Universe2D<C, E, M> {
         assert!(conf.size > 0);
 
-        let universe_size = conf.size;
         let mut universe = Universe2D {
             conf,
             cells: Vec::new(),
