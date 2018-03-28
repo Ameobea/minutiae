@@ -137,6 +137,7 @@ impl<T: Tys> Client<T> {
         }
 
         if seq == self.get_state().last_seq + 1 || self.get_state().last_seq == 0 {
+            debug(format!("Handling message with sequence number {}", seq));
             Client::handle_message(self, message);
 
             self.get_state().last_seq += 1;

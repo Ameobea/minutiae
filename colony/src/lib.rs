@@ -1,6 +1,9 @@
 #![feature(conservative_impl_trait, integer_atomics, test)]
 
+#[macro_use]
+extern crate lazy_static;
 extern crate minutiae;
+extern crate noise;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -94,11 +97,20 @@ impl Tys for ColonyTys {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum ColonyEvent {
-    Splat(Color),
+    Splat(P2D, [u8; 4]),
 }
 
 impl Event<ColonyTys> for ColonyEvent {
     fn apply(&self, universe: &mut <ColonyTys as Tys>::U) {
-        // TODO
+        match self {
+            &ColonyEvent::Splat(P2D { x, y }, color) => {
+                for y in (y-10..y+10) {
+                    for x in (x-10..x+10) {
+                        let state = CS::Color(color);
+                        universe.set_cell_unchecked(P2D { x, y }, state);
+                    }
+                }
+            }
+        }
     }
 }

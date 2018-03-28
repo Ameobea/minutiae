@@ -35,22 +35,21 @@ impl<T: Tys> HybridClient<T> where
 {
     fn apply_snap_inner(&mut self, snap: T::Snapshot) {
         self.universe = snap;
+        self.regenerate_pixbuf();
+    }
+
+    fn regenerate_pixbuf(&mut self) {
         // Generate content for the inner pixel buffer using the universe
-        for universe_index in 0..(self.pixbuf.len() / 4) {
+        for universe_index in 0..self.pixbuf.len() {
             let native_coord: T::I = <T::I as Into2DIndex>::from_2d_index(self.universe_size, universe_index);
             let cell: Cow<Cell<T::C>> = self.universe.get_cell(native_coord).unwrap();;
             let entity_indexes = self.universe.get_entities().get_entities_at(native_coord);
             let new_color: [u8; 4] = (self.color_calculator)(cell.as_ref(), entity_indexes, self.universe.get_entities());
 
             unsafe {
-                let pixel_ptr = self.pixbuf.get_unchecked_mut(universe_index * 4) as *mut [u8; 4];
-                // ptr::write(pixel_ptr, [200, 45, 133, 255]);
-                // ptr::write(pixel_ptr, new_color.0[0]);
+                let pixel_ptr = self.pixbuf.get_unchecked_mut(universe_index) as *mut [u8; 4];
                 ptr::write(pixel_ptr, new_color);
             }
-            // self.pixbuf[(universe_index * 4) + 0] = new_color.0;
-            // self.pixbuf[(universe_index * 4) + 1] = new_color.1;
-            // self.pixbuf[(universe_index * 4) + 2] = new_color.2;//, new_color.0[1], new_color.0[2], 255];
         }
     }
 }
@@ -70,7 +69,11 @@ impl<
         message: T::ServerMessage
     ) {
         match message.contents {
-            HybridServerMessageContents::Event(evts) => for e in evts { e.apply(&mut self.universe); },
+            HybridServerMessageContents::Event(evts) => for e in evts {
+                e.apply(&mut self.universe);
+                debug("Regenerating pixelbuf...");
+                self.regenerate_pixbuf();
+            },
             HybridServerMessageContents::Snapshot(snap) => self.apply_snap_inner(snap),
             _ => unreachable!(),
         }

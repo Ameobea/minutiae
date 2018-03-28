@@ -134,10 +134,11 @@ pub struct HybridServer<T: Tys> where
     seq: Arc<AtomicU32>,
     snapshot_requests: Vec<OneshotSender<(u32, T::Snapshot)>>,
     event_generator: fn(
-        &mut T::U,
-        &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
-        &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
-        &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
+        universe: &mut T::U,
+        seq: u32,
+        cell_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+        self_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+        entity_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
     ) -> Option<Vec<T::V>>,
     self_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
     cell_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
@@ -176,6 +177,7 @@ impl<
         // TODO: Look into recycling the buffers rather than reallocating if we're going to keep this system (we shouldn't)
         let merged_events: Vec<T::V> = match (self.event_generator)(
             universe,
+            seq,
             &*self.self_actions.read().unwrap(),
             &*self.cell_actions.read().unwrap(),
             &*self.entity_actions.read().unwrap()
@@ -231,10 +233,11 @@ impl<T: Tys> HybridServer<T> where
             &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
         ),
         event_generator: fn(
-            &mut T::U,
-            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
-            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
-            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
+            universe: &mut T::U,
+            seq: u32,
+            cell_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            self_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            entity_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
         ) -> Option<Vec<T::V>>
     ) -> (
         impl Fn(
@@ -273,10 +276,11 @@ impl<T: Tys> HybridServer<T> where
 
     pub fn new(
         event_generator: fn(
-            &mut T::U,
-            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
-            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
-            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
+            universe: &mut T::U,
+            seq: u32,
+            cell_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            self_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
+            entity_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
         ) -> Option<Vec<T::V>>
     ) -> Self {
         HybridServer {
