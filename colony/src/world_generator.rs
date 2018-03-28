@@ -11,7 +11,7 @@ impl CellGenerator<CS, ES, MES, P2D> for WorldGenerator {
         if x % 40 == 0 || y % 40 == 10 {
             Cell { state: CS::Empty }
         } else {
-            Cell { state: CS::Color(Color([(x % 10) as u8, (y % 10) as u8, ((x+y) % 50) as u8])) }
+            Cell { state: CS::Color([((x % 10) * 20) as u8, ((y % 10) * 20) as u8, ((x+y) % 50) as u8, 255u8]) }
         }
     }
 

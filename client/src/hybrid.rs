@@ -3,6 +3,7 @@
 //! the client maintains a full copy of the universe's state including cell and entity states.
 
 use std::borrow::Cow;
+use std::ptr;
 
 use minutiae::prelude::*;
 use minutiae::server::*;
@@ -20,11 +21,11 @@ pub struct HybridClient<T: Tys> where
         cell: &Cell<T::C>,
         entity_indexes: &[usize],
         entity_container: &EntityContainer<T::C, T::E, T::M, T::I>
-    ) -> (u8, u8, u8),
+    ) -> [u8; 4],
     universe: T::Snapshot,
     universe_size: usize,
     state: ClientState<T::Snapshot, T::ServerMessage>,
-    pixbuf: Vec<u8>,
+    pixbuf: Vec<[u8; 4]>,
 }
 
 impl<T: Tys> HybridClient<T> where
@@ -35,14 +36,21 @@ impl<T: Tys> HybridClient<T> where
     fn apply_snap_inner(&mut self, snap: T::Snapshot) {
         self.universe = snap;
         // Generate content for the inner pixel buffer using the universe
-        for universe_index in (0..self.pixbuf.len()).step_by(4) {
+        for universe_index in 0..(self.pixbuf.len() / 4) {
             let native_coord: T::I = <T::I as Into2DIndex>::from_2d_index(self.universe_size, universe_index);
             let cell: Cow<Cell<T::C>> = self.universe.get_cell(native_coord).unwrap();;
             let entity_indexes = self.universe.get_entities().get_entities_at(native_coord);
-            // let new_color = (self.color_calculator)(cell.as_ref(), entity_indexes, self.universe.get_entities());
-            self.pixbuf[(universe_index * 4) + 0] = 150u8;//new_color.0;
-            self.pixbuf[(universe_index * 4) + 1] = 150u8;//new_color.1;
-            self.pixbuf[(universe_index * 4) + 2] = 150u8;//new_color.2;//, new_color.0[1], new_color.0[2], 255];
+            let new_color: [u8; 4] = (self.color_calculator)(cell.as_ref(), entity_indexes, self.universe.get_entities());
+
+            unsafe {
+                let pixel_ptr = self.pixbuf.get_unchecked_mut(universe_index * 4) as *mut [u8; 4];
+                // ptr::write(pixel_ptr, [200, 45, 133, 255]);
+                // ptr::write(pixel_ptr, new_color.0[0]);
+                ptr::write(pixel_ptr, new_color);
+            }
+            // self.pixbuf[(universe_index * 4) + 0] = new_color.0;
+            // self.pixbuf[(universe_index * 4) + 1] = new_color.1;
+            // self.pixbuf[(universe_index * 4) + 2] = new_color.2;//, new_color.0[1], new_color.0[2], 255];
         }
     }
 }
@@ -120,14 +128,14 @@ impl<T: Tys> HybridClient<T> where
             cell: &Cell<T::C>,
             entity_indexes: &[usize],
             entity_container: &EntityContainer<T::C, T::E, T::M, T::I>
-        ) -> (u8, u8, u8),
+        ) -> [u8; 4],
     ) -> HybridClient<T> {
         HybridClient {
             universe_size,
             color_calculator,
             state: ClientState::new(),
             universe: T::Snapshot::empty(),
-            pixbuf: vec![0u8; universe_size * universe_size * 4],
+            pixbuf: vec![[0u8, 0u8, 0u8, 255u8]; universe_size * universe_size],
         }
     }
 }

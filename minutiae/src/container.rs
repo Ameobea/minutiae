@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::mem;
 use std::ops::{Index, IndexMut};
-use std::usize;
+use std::u32;
 
 #[cfg(feature = "serde")]
 use serde::Deserialize;
@@ -99,9 +99,11 @@ impl<
     I: Ord + Copy,
 > EntityContainer<C, E, M, I> {
     pub fn new() -> Self {
-        // a point of `usize::MAX` indicates that the slot is the last available one.
+        // a point of `u32::MAX` indicates that the slot is the last available one.
+        // (We use `u32` instead of `usize` so that we can handle binary serialization/deserialization on
+        // 32-bit platforms such as WebAssembly and Asm.JS)
         EntityContainer{
-            entities: vec![EntitySlot::Empty(usize::MAX)],
+            entities: vec![EntitySlot::Empty(u32::MAX as usize)],
             empty_index: 0,
             positions: EntityPositions::new()
         }
@@ -110,7 +112,7 @@ impl<
     /// Inserts an entity into the container, returning its index
     pub fn insert(&mut self, entity: Entity<C, E, M>, universe_index: I) -> usize {
         let &mut EntityContainer{ref mut entities, empty_index, ref mut positions} = self;
-        let entity_index = if empty_index != usize::MAX {
+        let entity_index = if empty_index != (u32::MAX as usize) {
             let next_empty = match entities[empty_index] {
                 EntitySlot::Empty(next_empty) => next_empty,
                 _ => unreachable!(),

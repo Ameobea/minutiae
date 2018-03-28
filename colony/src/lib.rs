@@ -25,7 +25,7 @@ use world_generator::WorldGenerator;
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum CS {
     Empty,
-    Color(Color),
+    Color([u8; 4]),
 }
 
 impl Default for CS {
@@ -68,10 +68,10 @@ pub fn color_calculator(
     cell: &Cell<CS>,
     entity_indexes: &[usize],
     entity_container: &EntityContainer<CS, ES, MES, P2D>
-) -> (u8, u8, u8) {
+) -> [u8; 4] {
     match cell.state {
-        CS::Empty => (0, 0, 0),
-        CS::Color(color) => (color.0[0], color.0[1], color.0[2])
+        CS::Empty => [0, 0, 0, 255],
+        CS::Color(color) => color,
     }
 }
 
