@@ -32,7 +32,7 @@ jobs:
           if [ $CIRCLE_BRANCH = "master" ]
           then
             ~/.cargo/bin/cargo login $CARGO_API_TOKEN
-            cd minutiae && ~/.cargo/bin/cargo publish
+            cd minutiae && ~/.cargo/bin/cargo publish || true
           fi
       - save_cache:
           key: v1-minutiae-test-{{ arch }}-{{ checksum "minutiae/Cargo.lock" }}
