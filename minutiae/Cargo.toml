@@ -66,6 +66,7 @@ server = [
     "flate2",
     "futures-cpupool"
 ]
+
 [profile.release]
 debug = true
 lto = true

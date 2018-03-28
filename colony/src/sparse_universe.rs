@@ -23,26 +23,6 @@ pub trait CellGenerator<
     fn gen_initial_entities(universe_index: I) -> Vec<Entity<CS, ES, MES>>;
 }
 
-struct StatelessGenerator<
-    CS: CellState,
-    ES: EntityState<CS>,
-    MES: MutEntityState,
-    I: Ord,
-    G: CellGenerator<CS, ES, MES, I>
->(PhantomData<CS>, PhantomData<ES>, PhantomData<MES>, PhantomData<I>, PhantomData<G>);
-
-impl<
-    CS: CellState,
-    ES: EntityState<CS>,
-    MES: MutEntityState,
-    I: Ord,
-    G: CellGenerator<CS, ES, MES, I>
-> Generator<CS, ES, MES> for StatelessGenerator<CS, ES, MES, I, G> {
-    fn gen(&mut self, _conf: &UniverseConf) -> (Vec<Cell<CS>>, Vec<Vec<Entity<CS, ES, MES>>>) {
-        (Vec::new(), Vec::new())
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct P2D {
     pub x: usize,
@@ -51,7 +31,7 @@ pub struct P2D {
 
 impl P2D {
     pub fn get_index(&self, universe_size: usize) -> usize {
-        get_index(self.x, self.y, universe_size)
+        get_index(self.x as usize, self.y as usize, universe_size)
     }
 
     pub fn from_index(index: usize, universe_size: usize) -> Self {
@@ -80,7 +60,7 @@ impl PartialOrd for P2D {
 
 impl Into2DIndex for P2D {
     fn into_2d_index(self, universe_size: usize) -> usize {
-        self.get_index(universe_size)
+        self.get_index(universe_size) as usize
     }
 
     fn from_2d_index(universe_size: usize, universe_index: usize) -> Self {
@@ -263,7 +243,7 @@ impl ExactSizeIterator for UniverseIterator {
         let row_length = self.end.x - self.start.x;
         let row_count = self.end.y - self.start.y;
 
-        row_length * row_count
+        (row_length * row_count) as usize
     }
 }
 

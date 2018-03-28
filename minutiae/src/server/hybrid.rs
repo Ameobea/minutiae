@@ -9,6 +9,7 @@ use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 
 use futures::Future;
+use futures::sync::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
@@ -126,26 +127,27 @@ impl<T: Tys> HybridServerMessage<T> where T::Snapshot: Clone, T::V: Clone {
     }
 }
 
-#[derive(Clone)]
 pub struct HybridServer<T: Tys> where
     T::Snapshot: Clone,
     T::V: Clone,
 {
-    pub seq: Arc<AtomicU32>,
-    pub event_generator: fn(
+    seq: Arc<AtomicU32>,
+    snapshot_requests: Vec<OneshotSender<(u32, T::Snapshot)>>,
+    event_generator: fn(
         &mut T::U,
         &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
         &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
         &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
     ) -> Option<Vec<T::V>>,
-    pub self_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
-    pub cell_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
-    pub entity_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
+    self_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
+    cell_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
+    entity_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
 }
 
 impl<
     T: Tys<ServerMessage=HybridServerMessage<T>
 >> ServerLogic<T, HybridClientMessage> for HybridServer<T> where
+    T: 'static,
     T::C: Send + Sync + Clone,
     T::E: Send + Sync + Clone,
     T::M: Send + Sync + Clone,
@@ -157,9 +159,16 @@ impl<
     T::Snapshot: Serialize + for<'de> Deserialize<'de> + Clone + Send + From<T::U>,
 {
     fn tick(
-        &self,
+        &mut self,
+        seq: u32,
         universe: &mut T::U
     ) -> Option<Vec<HybridServerMessage<T>>> {
+        // Handle any pending snapshot requests
+        for oneshot_tx in self.snapshot_requests.drain(..) {
+            println!("Fulfilling snapshot request...");
+            let _ = oneshot_tx.send((seq, universe.clone().into(),));
+        }
+
         let pending_messages: Option<Vec<T::V>> = None;
 
         // use the user-defined logic to get the events to pass through to the clients.  The internal action buffers
@@ -189,13 +198,21 @@ impl<
     }
 
     fn handle_client_message(
-        &self,
+        &mut self,
         _seq: Arc<AtomicU32>,
         message: &HybridClientMessage
     ) -> Box<Future<Item=Option<HybridServerMessage<T>>, Error=!>> {
+        println!("Handling client message: {:?}", message);
         match message.contents {
             HybridClientMessageContents::RequestSnapshot => {
-                unimplemented!(); // TODO
+                box self.request_snapshot()
+                    .map(|(seq, snapshot)| {
+                        let server_message = HybridServerMessage::new(
+                            seq,
+                            HybridServerMessageContents::Snapshot(snapshot)
+                        );
+                        Some(server_message)
+                    })
             },
         }
     }
@@ -265,9 +282,67 @@ impl<T: Tys> HybridServer<T> where
         HybridServer {
             seq: Arc::new(AtomicU32::new(0)),
             event_generator,
+            snapshot_requests: Vec::new(),
             self_actions: Arc::new(RwLock::new(Vec::new())),
             cell_actions: Arc::new(RwLock::new(Vec::new())),
             entity_actions: Arc::new(RwLock::new(Vec::new())),
         }
     }
+
+    fn request_snapshot(&mut self) -> impl Future<Item=(u32, T::Snapshot), Error=!> {
+        let (oneshot_tx, oneshot_rx) = oneshot_channel();
+        self.snapshot_requests.push(oneshot_tx);
+        oneshot_rx.map_err(|_| unreachable!())
+    }
+}
+
+#[test]
+fn hybrid_server_message_binary_serialization() {
+    use prelude::*;
+    use server::{Message, Tys};
+    use universe::Universe2D;
+
+    #[derive(Clone, Copy)]
+    struct TestTys;
+    impl Tys for TestTys {
+        type C = CS;
+        type E = ES;
+        type M = MES;
+        type CA = CA;
+        type EA = EA;
+        type I = usize;
+        type U = Universe2D<CS, ES, MES>;
+        type V = TestEvent;
+        type Snapshot = Self::U;
+        type ServerMessage = HybridServerMessage<Self>;
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+    struct CS;
+    impl CellState for CS {}
+    #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+    struct ES;
+    impl EntityState<CS> for ES {}
+    #[derive(Clone, Default, Copy, Debug, PartialEq, Serialize, Deserialize)]
+    struct MES;
+    impl MutEntityState for MES {}
+    #[derive(Clone, Default, Copy, Debug, PartialEq, Serialize, Deserialize)]
+    struct CA;
+    impl CellAction<CS> for CA {}
+    #[derive(Clone, Default, Copy, Debug, PartialEq, Serialize, Deserialize)]
+    struct EA;
+    impl EntityAction<CS, ES> for EA {}
+    #[derive(Clone, Default, Copy, Debug, PartialEq, Serialize, Deserialize)]
+    struct TestEvent;
+    impl Event<TestTys> for TestEvent {
+        fn apply(&self, universe: &mut <TestTys as Tys>::U) {}
+    }
+
+    let universe: Universe2D<CS, ES, MES> = Universe2D::default();
+    let sm_contents = HybridServerMessageContents::Snapshot(universe);
+    let sm: <TestTys as Tys>::ServerMessage = HybridServerMessage::new(300, sm_contents);
+    let sm_clone = sm.clone();
+    let encoded = sm.bin_serialize().unwrap();
+    let decoded = <TestTys as Tys>::ServerMessage::bin_deserialize(&encoded).unwrap();
+    assert_eq!(sm_clone, decoded);
 }

@@ -82,11 +82,11 @@ pub trait Message : Sized {
 // glue to implement `Message` for everything by default where it's possible
 impl<T> Message for T where T:Debug + PartialEq + Eq + Sized + Send + Serialize, for<'de> T: Deserialize<'de> {
     fn bin_serialize(&self) -> Result<Vec<u8>, String> {
-        bincode::serialize(self).map_err(|_| String::from("Unable to serialize message."))
+        bincode::serialize(self).map_err(|err| format!("Unable to serialize message: {:?}", err))
     }
 
     fn bin_deserialize(data: &[u8]) -> Result<Self, String> {
-        bincode::deserialize(data).map_err(|_| String::from("Unable to deserialize message."))
+        bincode::deserialize(data).map_err(|err| format!("Unable to deserialize message: {:?}", err))
     }
 }
 
@@ -132,11 +132,11 @@ pub trait CompressedMessage: Sized + Send + PartialEq + Serialize {
 
 pub trait ServerLogic<T: Tys, CM: Message>: Sync {
     /// Called every tick; the resulting messages are broadcast to every connected client.
-    fn tick(&self, universe: &mut T::U) -> Option<Vec<T::ServerMessage>>;
+    fn tick(&mut self, seq: u32, universe: &mut T::U) -> Option<Vec<T::ServerMessage>>;
     /// Called for every message received from a client; the resulting messages are broadcast to the
     /// client that sent the message.
     fn handle_client_message(
-        &self,
+        &mut self,
         seq: Arc<AtomicU32>,
         &CM
     ) -> Box<Future<Item=Option<T::ServerMessage>, Error=!>>;

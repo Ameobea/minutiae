@@ -5,6 +5,9 @@
 
 use std::borrow::Cow;
 
+#[cfg(feature = "serde")]
+use serde::Deserialize;
+
 use container::EntityContainer;
 use cell::{Cell, CellState};
 use entity::{EntityState, MutEntityState};
@@ -57,20 +60,22 @@ pub trait ContiguousUniverse<
 }
 
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Universe2DConf {
-    pub view_distance: usize,
-    pub size: usize,
+    pub size: u32,
 }
 
 impl Default for Universe2DConf {
     fn default() -> Universe2DConf {
         Universe2DConf {
-            view_distance: 1,
-            size: 8000,
+            size: 800,
         }
     }
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone)]
+#[cfg_attr(feature = "serde", serde(bound = "C: for<'d> Deserialize<'d>"))]
 pub struct Universe2D<
     C: CellState,
     E: EntityState<C>,
@@ -125,7 +130,7 @@ impl<
     }
 
     pub fn get_size(&self) -> usize {
-        self.conf.size
+        self.conf.size as usize
     }
 }
 
@@ -189,6 +194,16 @@ impl<
     C: CellState + 'static,
     E: EntityState<C>,
     M: MutEntityState,
+> CellContainer<C, usize> for Universe2D<C, E, M> {
+    fn get_cell_direct(&self, index: usize) -> Cell<C> {
+        self.cells[index].clone()
+    }
+}
+
+impl<
+    C: CellState + 'static,
+    E: EntityState<C>,
+    M: MutEntityState,
 > ContiguousUniverse<C, E, M, usize, Vec<Cell<C>>> for Universe2D<C, E, M> {
     fn get_cell_container<'a>(&'a self) -> &'a Vec<Cell<C>> {
         &self.cells
@@ -199,4 +214,10 @@ pub trait Into2DIndex {
     fn into_2d_index(self, universe_size: usize) -> usize;
 
     fn from_2d_index(universe_size: usize, universe_index: usize) -> Self;
+}
+
+impl Into2DIndex for usize {
+    fn into_2d_index(self, _: usize) -> usize { self }
+
+    fn from_2d_index(_: usize, universe_index: usize) -> Self { universe_index }
 }

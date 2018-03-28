@@ -12,6 +12,7 @@ use minutiae::server::Tys;
 use minutiae::server::Event;
 use minutiae::server::HybridServerMessage;
 use minutiae::util::Color;
+// use minutiae::universe::Universe2D;
 
 pub mod engine;
 pub mod entity_driver;
@@ -42,7 +43,7 @@ pub enum ES {
 
 #[derive(Clone, Default, Copy, Serialize, Deserialize)]
 pub struct MES {
-    __placeholder: usize,
+    __placeholder: u32,
 }
 
 impl MutEntityState for MES {}
@@ -85,6 +86,7 @@ impl Tys for ColonyTys {
     type EA = EA;
     type I = P2D;
     type U = Sparse2DUniverse<CS, ES, MES, WorldGenerator>;
+    // type U = Universe2D<CS, ES, MES>;
     type V = ColonyEvent;
     type Snapshot = Self::U;
     type ServerMessage = HybridServerMessage<Self>;

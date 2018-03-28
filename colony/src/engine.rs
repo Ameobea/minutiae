@@ -15,7 +15,9 @@ pub fn exec_actions(
 
 }
 
-pub fn get_engine<'u>() -> impl Engine<CS, ES, MES, CA, EA, Sparse2DUniverse<CS, ES, MES, WorldGenerator>> {
+pub fn get_engine<'u>() -> impl Engine<
+    CS, ES, MES, CA, EA, Sparse2DUniverse<CS, ES, MES, WorldGenerator>
+> {
     let engine: ParallelEngine<
         CS,
         ES,
@@ -25,6 +27,8 @@ pub fn get_engine<'u>() -> impl Engine<CS, ES, MES, CA, EA, Sparse2DUniverse<CS,
         P2D,
         Sparse2DUniverse<CS, ES, MES, WorldGenerator>,
         Sparse2DUniverse<CS, ES, MES, WorldGenerator>,
+        // Vec<Cell<CS>>,
+        // Universe2D<CS, ES, MES>,
         _
     > = ParallelEngine::new(exec_actions, our_entity_driver);
 

@@ -114,7 +114,6 @@ pub struct ColorServer<
         entity_indexes: &[usize],
         entity_container: &EntityContainer<T::C, T::E, T::M, T::I>
     ) -> Color,
-    pub seq: Arc<AtomicU32>,
     pub iterator: fn(T::I, T::I) -> I,
     pub start_index: T::I,
     pub end_index: T::I,
@@ -139,7 +138,6 @@ impl<
         ColorServer {
             colors: Arc::new(RwLock::new(vec![Color([0, 0, 0,]); grid_size])),
             color_calculator,
-            seq: Arc::new(AtomicU32::new(0)),
             iterator,
             start_index: default_start_index,
             end_index: default_end_index,
@@ -156,7 +154,7 @@ impl<
     T::Snapshot: Clone,
     T::V: Clone,
 {
-    fn tick(&self, universe: &mut T::U) -> Option<Vec<ThinServerMessage>> {
+    fn tick(&mut self, seq: u32, universe: &mut T::U) -> Option<Vec<ThinServerMessage>> {
         // TODO: Create an option for making this parallel because it's a 100% parallelizable task
         let mut diffs = Vec::new();
         let mut colors = self.colors.write().expect("Unable to lock colors vector for writing!");
@@ -178,13 +176,13 @@ impl<
 
         // create a `ServerMessage` out of the diffs, serialize/compress it, and broadcast it to all connected clients
         Some(vec![ThinServerMessage {
-            seq: self.seq.load(AtomicOrdering::Relaxed),
+            seq,
             contents: ThinServerMessageContents::Diff(diffs),
         }])
     }
 
     fn handle_client_message(
-        &self,
+        &mut self,
         seq: Arc<AtomicU32>,
         client_message: &ThinClientMessage
     ) -> Box<Future<Item=Option<ThinServerMessage>, Error=!>> {

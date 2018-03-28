@@ -1,6 +1,6 @@
 //! Minutiae simulation client.  See README.md for more information.
 
-#![feature(associated_type_defaults, conservative_impl_trait, iterator_step_by, nll)]
+#![feature(associated_type_defaults, conservative_impl_trait, core_intrinsics, iterator_step_by, nll)]
 
 extern crate minutiae;
 extern crate serde;
@@ -9,6 +9,7 @@ extern crate uuid;
 extern crate colony;
 
 use std::ffi::CString;
+use std::intrinsics::type_name;
 use std::marker::PhantomData;
 use std::mem;
 use std::os::raw::{c_char, c_int};
@@ -95,11 +96,16 @@ impl<T: Tys> Client<T> {
     // TODO: Actually use sequence numbers in a somewhat intelligent manner
     // TODO: Wait until the response from the snapshot request before applying diffs
     pub fn handle_binary_message(&mut self, slice: &[u8]) {
-        // decompress and deserialize the message buffer into a `ThinServerMessage`
+        debug(&format!("Binary message received: {:?}", slice));
+        // decompress and deserialize the message buffer into a `T::ServerMessage`
         let message: T::ServerMessage = match T::ServerMessage::bin_deserialize(slice) {
             Ok(msg) => msg,
             Err(err) => {
-                println!("Error while deserializing `ThinServerMessage`: {:?}", err);
+                debug(&format!(
+                    "Error while deserializing `{}`: {:?}",
+                    unsafe { type_name::<T::ServerMessage>() },
+                    err
+                ));
                 return;
             },
         };
@@ -188,8 +194,9 @@ pub fn main() {
     // Initialize the global `GenClient` with a client instance
     let client: hybrid::HybridClient<ColonyTys> = hybrid::HybridClient::new(800, color_calculator);
     unsafe { CLIENT_WRAPPER = Box::into_raw(Box::new(Box::new(client))) };
+    debug(&format!("ServerMessage size: {}", ::std::mem::size_of::<<ColonyTys as Tys>::ServerMessage>()));
 
     // create the websocket connection and start handling server messages
-    println!("Initializing WS connection from the Rust side...");
+    debug("Initializing WS connection from the Rust side...");
     unsafe { init_ws() };
 }

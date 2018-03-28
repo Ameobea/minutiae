@@ -17,13 +17,7 @@ use action::{Action, CellAction, SelfAction, EntityAction, OwnedAction};
 use engine::Engine;
 use container::{EntityContainer, EntitySlot};
 
-type ActionBufs<
-    C: CellState + 'static,
-    E: EntityState<C> + 'static,
-    CA: CellAction<C> + 'static,
-    EA: EntityAction<C, E> + 'static,
-    I: 'static,
-> = (
+type ActionBufs<C, E, CA, EA, I> = (
     Vec<OwnedAction<C, E, CA, EA, I>>,
     usize,
     Vec<OwnedAction<C, E, CA, EA, I>>,
@@ -150,6 +144,7 @@ impl<
                     let entities: &EntityContainer<C, E, M, I> = unsafe {
                         &*(entities_ptr as *const EntityContainer<C, E, M, I>)
                     };
+                    // TODO TODO TODO ------------------- THIS IS BAD \/ \/ \/ \/ \/ \/ \/
                     let cells: &Vec<Cell<C>> = unsafe { &*(cells_ptr as *const Vec<Cell<C>>) };
 
                     // keep processing work as long as there's work left to process
