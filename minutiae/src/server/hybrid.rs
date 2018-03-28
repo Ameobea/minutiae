@@ -157,7 +157,7 @@ impl<
     T::Snapshot: Serialize + for<'de> Deserialize<'de> + Clone + Send + From<T::U>,
 {
     fn tick(
-        &mut self,
+        &self,
         universe: &mut T::U
     ) -> Option<Vec<HybridServerMessage<T>>> {
         let pending_messages: Option<Vec<T::V>> = None;
@@ -189,7 +189,7 @@ impl<
     }
 
     fn handle_client_message(
-        &mut self,
+        &self,
         _seq: Arc<AtomicU32>,
         message: &HybridClientMessage
     ) -> Box<Future<Item=Option<HybridServerMessage<T>>, Error=!>> {

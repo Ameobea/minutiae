@@ -69,7 +69,7 @@ unsafe impl<
     C: CellState,
     E: EntityState<C>,
     M: MutEntityState,
-    I
+    I,
 > Send for EntitySlot<C, E, M, I> where C:Send, E:Send, M:Send, I: Send {}
 
 /// Data structure holding all of the universe's entities.  The entities and their state are held in a vector of

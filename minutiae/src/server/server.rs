@@ -10,7 +10,8 @@ use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use futures::{Future, Sink, Stream};
-use futures::stream::{iter_ok, SplitSink};
+use futures::sync::mpsc::{unbounded, UnboundedSender};
+use futures::stream::SplitSink;
 use futures::sync::mpsc;
 use futures::future::ok;
 use futures_cpupool::CpuPool;
@@ -37,7 +38,6 @@ impl Counter {
 	}
 }
 
-
 impl Iterator for Counter {
 	type Item = Id;
 
@@ -61,10 +61,9 @@ pub struct Server<
 > {
     seq: Arc<AtomicU32>,
     logic: Arc<L>,
-    connection_map: Arc<RwLock<HashMap<Id, WebsocketClientSink>>>,
-    event_loop_handle: Handle,
-    __phantom_T: PhantomData<T>,
-    __phantom_CM: PhantomData<CM>,
+    connection_map: Arc<RwLock<HashMap<Id, UnboundedSender<OwnedWsMessage>>>>,
+    __phantom_t: PhantomData<T>,
+    __phantom_cm: PhantomData<CM>,
 }
 
 fn spawn_future<
@@ -120,17 +119,33 @@ fn handle_client_message<
     }
 }
 
+/// Generates a stream that feeds messages into the client sink provided to it.
+fn create_client_sink_handler(
+    sink: WebsocketClientSink
+) -> (impl Future<Item=(), Error=()>, UnboundedSender<OwnedWsMessage>) {
+    let (tx, rx) = unbounded();
+
+    // Forward all the messages from the
+    let driver_future = rx
+        .map_err(|()| -> WebSocketError { unreachable!() })
+        .forward(sink)
+        .map(|_| println!("WARN: Client sink fully flushed from tx")) // This should never actually reach here
+        .map_err(|ws_err| {
+            println!("Error while sending items through WebSocket to client: {:?}", ws_err)
+        });
+
+    (driver_future, tx)
+}
+
 fn get_ws_server_future<
     T: Tys,
     CM: Message + Send,
     L: ServerLogic<T, CM> + Clone + Send + 'static,
 >(
+    ws_host: &str,
     seq: Arc<AtomicU32>,
     logic: Arc<L>
-) -> (
-    Handle,
-    Arc<RwLock<HashMap<Id, WebsocketClientSink>>>,
-) where
+) -> Arc<RwLock<HashMap<Id, UnboundedSender<OwnedWsMessage>>>> where
     T::ServerMessage: 'static,
 {
     // Set up Tokio stuff
@@ -144,12 +159,13 @@ fn get_ws_server_future<
     // can be used to send messages to them individually
 	let connection_map = Arc::new(RwLock::new(HashMap::new()));
     let connection_map_clone = Arc::clone(&connection_map);
+    let connection_map_clone2 = Arc::clone(&connection_map);
     // Channel which can be used to send the client sink out
 	let (receive_channel_out, receive_channel_in) = mpsc::unbounded();
-    let conn_id = Rc::new(RefCell::new(Counter::new()));
+    let conn_id_generator = Rc::new(RefCell::new(Counter::new()));
 
     // Initialize the websocket server
-    let server = AsyncWsServer::bind("0.0.0.0:7037", &handle).unwrap();
+    let server = AsyncWsServer::bind(ws_host, &handle).unwrap();
 
     let connection_handler = server.incoming()
         // We don't want to save the stream if it drops
@@ -160,7 +176,7 @@ fn get_ws_server_future<
             let channel = receive_channel_out.clone();
             let handle = handle_clone.clone();
             let handle_clone = handle.clone();
-            let conn_id_clone = conn_id.clone();
+            let conn_id_generator_clone = conn_id_generator.clone();
 
             // accept the request to be a ws connection if it does
             let f = upgrade
@@ -169,7 +185,7 @@ fn get_ws_server_future<
                 .and_then(move |(framed, _)| {
                     let (sink, client_message_stream) = framed.split();
                     // Create an ID for this client using our counter
-                    let client_id = conn_id_clone
+                    let client_id = conn_id_generator_clone
                         .borrow_mut()
                         .next()
                         .expect("maximum amount of ids reached");
@@ -178,11 +194,17 @@ fn get_ws_server_future<
                     // handle it on the CPU Pool
                     let f = channel.send((client_id, client_message_stream));
                     spawn_future(f, "Sent stream to connection pool", &handle);
+
+                    // Create a stream that wraps around the sink and handles converting and
+                    // sending `ServerMessage`s through it
+                    let (handler_future, tx) = create_client_sink_handler(sink);
+                    spawn_future(handler_future, "Client message channel mapper", &handle);
+
                     // Insert the new connection into the connection map
                     connection_map
                         .write()
                         .unwrap()
-                        .insert(client_id, sink);
+                        .insert(client_id, tx);
 
                     Ok(())
                 });
@@ -191,50 +213,75 @@ fn get_ws_server_future<
             Ok(())
         });
 
-    // Handle receiving messages from a client
-	let remote_inner = remote.clone();
-	pool.spawn_fn(move || {
-		receive_channel_in.for_each(move |(id, client_message_stream)| {
+	let client_stream_handler = pool.spawn_fn(move || {
+        let remote_clone = remote.clone();
+        let seq = seq;
+        let connection_map = Arc::clone(&connection_map_clone2);
+
+		receive_channel_in.for_each(move |(client_id, client_message_stream)| {
+            let seq_clone = Arc::clone(&seq);
+            let remote_inner = remote_clone.clone();
+            let logic_clone = Arc::clone(&logic);
+            let connection_map = Arc::clone(&connection_map);
+
 			remote_inner.spawn(move |_| {
+                let seq_clone_clone = Arc::clone(&seq_clone);
+                let logic_clone_clone = Arc::clone(&logic_clone);
+
                 client_message_stream
                     .and_then(move |msg| {
-                        handle_client_message(msg, Arc::clone(&seq), Arc::clone(&logic))
+                        handle_client_message(msg, Arc::clone(&seq_clone_clone), Arc::clone(&logic_clone_clone))
                     })
-                    .for_each(move |server_message_opt| match server_message_opt {
+                    .map_err(|ws_err| format!("{:?}", ws_err))
+                    .for_each(move |server_msg_opt| match server_msg_opt {
                         Some(msg) => {
                             // We have a message that needs to get sent back to the client
-                            Ok(()) // TODO
+                            // Get the client's sink out of the connection map
+                            let mut connection_map_inner = connection_map
+                                .read()
+                                .expect("Unable to lock connect_map for reading in message handler!");
+                            let client_tx = match connection_map_inner.get(&client_id) {
+                                Some(tx) => tx,
+                                None => {
+                                    return Err(format!("No entry in connection map for client {}; assuming they disconnected.", client_id));
+                                }
+                            };
+
+                            client_tx.unbounded_send(msg).expect("Unable to send message through server message channel!");
+                            Ok(())
                         },
                         None => Ok(()),
                     })
-                    .map_err(|_| ())
+                    .map_err(|err| {
+                        println!("Error while handling client message: {}", err);
+                    })
             });
+
 			Ok(())
 		})
 	});
 
-    // Spawn the server's logic future on the event loop
+    // Spawn the server's connection handler future on the event loop
     core.run(connection_handler).unwrap();
+    // spawn the server's client message handler future on the event loop as well
+    core.run(client_stream_handler).unwrap();
 
-    (handle, connection_map)
+    connection_map
 }
 
 impl<
     T: Tys,
     CM: Message + Send,
     L: ServerLogic<T, CM> + Clone + Send + 'static,
-> Server<T, CM, L> where
-    Self: Clone,
-    T::ServerMessage: 'static,
-{
+> Server<T, CM, L> where T::ServerMessage: 'static {
     pub fn new(
         ws_host: &'static str,
         logic: L,
         seq: Arc<AtomicU32>
     ) -> Box<Self> {
-        let seq = Arc::new(AtomicU32::new(0));
         let logic = Arc::new(logic);
-        let (event_loop_handle, connection_map) = get_ws_server_future(
+        let connection_map = get_ws_server_future(
+            ws_host,
             Arc::clone(&seq),
             Arc::clone(&logic)
         );
@@ -243,9 +290,8 @@ impl<
             seq,
             logic,
             connection_map,
-            event_loop_handle,
-            __phantom_CM: PhantomData,
-            __phantom_T: PhantomData,
+            __phantom_cm: PhantomData,
+            __phantom_t: PhantomData,
         }
     }
 }
@@ -265,16 +311,11 @@ impl<
             .map(|sm| OwnedWsMessage::Binary(sm.bin_serialize().unwrap()))
             .collect();
 
-        for (client_id, server_msg_sink) in &*self.connection_map.read().unwrap() {
-            let binary_messages_stream = iter_ok::<_, ()>(binary_messages.clone());
-            let response_msg_future = binary_messages_stream
-                .map_err(|_| -> WebSocketError { unreachable!() })
-                .forward(*server_msg_sink)
-                .map_err(|ws_err| println!("Error while broadcasting message to client: {:?}", ws_err))
-                .map(|res| ());
-
-            // Spawn the response future on the event loop
-            self.event_loop_handle.spawn(response_msg_future);
+        for (_client_id, client_tx) in &*self.connection_map.write().unwrap() {
+            for binary_msg in binary_messages.clone() {
+                client_tx.unbounded_send(binary_msg)
+                    .expect("Unable to broadcast message to client");
+            }
         }
     }
 }

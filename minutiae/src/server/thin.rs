@@ -156,7 +156,7 @@ impl<
     T::Snapshot: Clone,
     T::V: Clone,
 {
-    fn tick(&mut self, universe: &mut T::U) -> Option<Vec<ThinServerMessage>> {
+    fn tick(&self, universe: &mut T::U) -> Option<Vec<ThinServerMessage>> {
         // TODO: Create an option for making this parallel because it's a 100% parallelizable task
         let mut diffs = Vec::new();
         let mut colors = self.colors.write().expect("Unable to lock colors vector for writing!");
@@ -184,7 +184,7 @@ impl<
     }
 
     fn handle_client_message(
-        &mut self,
+        &self,
         seq: Arc<AtomicU32>,
         client_message: &ThinClientMessage
     ) -> Box<Future<Item=Option<ThinServerMessage>, Error=!>> {

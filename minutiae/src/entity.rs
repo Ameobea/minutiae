@@ -2,7 +2,6 @@
 //! with other entities.  They are the smallest units of discrete control in the simulation and are the only things that are
 //! capable of mutating any aspect of the world outside of the simulation engine itself.
 
-use std::cell::Cell as RustCell;
 use std::clone::Clone;
 use std::fmt::{self, Debug, Formatter};
 use std::marker::PhantomData;
@@ -36,7 +35,7 @@ pub trait MutEntityState: Clone + Default {}
 #[cfg_attr(feature = "serde", serde(bound = "C: for<'d> Deserialize<'d>"))]
 pub struct Entity<C: CellState, S: EntityState<C>, M: MutEntityState> {
     pub state: S,
-    pub mut_state: RustCell<M>,
+    pub mut_state: M,
     pub uuid: Uuid,
     phantom: PhantomData<C>,
 }
@@ -47,25 +46,30 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> Debug for Entity<C, E, 
     }
 }
 
-impl<C: CellState, E: EntityState<C>, M: MutEntityState> Clone for Entity<C, E, M> where E:Clone, M:Clone {
+impl<
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState
+> Clone for Entity<C, E, M> where E:Clone, M:Clone {
     fn clone(&self) -> Self {
-        let mut_state_inner = self.mut_state.take();
-        let mut_state_inner_clone = mut_state_inner.clone();
-        self.mut_state.set(mut_state_inner_clone);
         Entity {
             state: self.state.clone(),
-            mut_state: RustCell::new(mut_state_inner),
+            mut_state: self.mut_state.clone(),
             uuid: Uuid::new_v4(),
             phantom: PhantomData,
         }
     }
 }
 
-impl<C: CellState, E: EntityState<C>, M: MutEntityState> Entity<C, E, M> {
+impl<
+    C: CellState,
+    E: EntityState<C>,
+    M: MutEntityState,
+> Entity<C, E, M> {
     pub fn new(state: E, mut_state: M) -> Entity<C, E, M> {
         Entity {
             state: state,
-            mut_state: RustCell::new(mut_state),
+            mut_state: mut_state,
             uuid: Uuid::new_v4(),
             phantom: PhantomData,
         }

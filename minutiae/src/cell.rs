@@ -32,7 +32,7 @@ impl<S> Clone for Cell<S> where S: Clone {
     }
 }
 
-impl <S> PartialEq for Cell<S> where S: PartialEq {
+impl<S> PartialEq for Cell<S> where S: PartialEq {
     fn eq(&self, other: &Cell<S>) -> bool {
         self.state == other.state
     }

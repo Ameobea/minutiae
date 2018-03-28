@@ -7,14 +7,7 @@ extern crate serde_derive;
 extern crate test;
 extern crate uuid;
 
-use std::sync::Arc;
-use std::sync::atomic::AtomicU32;
-
 use minutiae::prelude::*;
-use minutiae::driver::BasicDriver;
-use minutiae::driver::middleware::MinDelay;
-use minutiae::server::HybridServer;
-// use minutiae::server::Server;
 use minutiae::server::Tys;
 use minutiae::server::Event;
 use minutiae::server::HybridServerMessage;
@@ -25,7 +18,7 @@ pub mod entity_driver;
 pub mod sparse_universe;
 pub mod world_generator;
 
-use sparse_universe::{P2D, Sparse2DUniverse, UniverseIterator};
+use sparse_universe::{P2D, Sparse2DUniverse};
 use world_generator::WorldGenerator;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -52,7 +45,7 @@ pub struct MES {
     __placeholder: usize,
 }
 
-impl MutEntityState for MES{}
+impl MutEntityState for MES {}
 
 impl EntityState<CS> for ES {}
 

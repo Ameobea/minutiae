@@ -132,11 +132,11 @@ pub trait CompressedMessage: Sized + Send + PartialEq + Serialize {
 
 pub trait ServerLogic<T: Tys, CM: Message>: Sync {
     /// Called every tick; the resulting messages are broadcast to every connected client.
-    fn tick(&mut self, universe: &mut T::U) -> Option<Vec<T::ServerMessage>>;
+    fn tick(&self, universe: &mut T::U) -> Option<Vec<T::ServerMessage>>;
     /// Called for every message received from a client; the resulting messages are broadcast to the
     /// client that sent the message.
     fn handle_client_message(
-        &mut self,
+        &self,
         seq: Arc<AtomicU32>,
         &CM
     ) -> Box<Future<Item=Option<T::ServerMessage>, Error=!>>;
