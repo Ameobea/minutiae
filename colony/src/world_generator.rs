@@ -13,6 +13,18 @@ const ZOOM: f64 = 0.01;
 #[derive(Copy, Clone)]
 pub struct WorldGenerator;
 
+fn get_cs(noise: f64) -> CS {
+    if noise <= -0.5 {
+        CS::Empty
+    } else if noise <= 0.0 {
+        CS::Color([11, 33, 66, 255])
+    } else if noise <= 0.5 {
+        CS::Color([55, 3, 155, 255])
+    } else {
+        CS::Color([16, 135, 204, 255])
+    }
+}
+
 impl CellGenerator<CS, ES, MES, P2D> for WorldGenerator {
     fn gen_cell(P2D {x, y}: P2D) -> Cell<CS> {
         // if x % 40 == 0 || y % 40 == 10 {
@@ -22,12 +34,7 @@ impl CellGenerator<CS, ES, MES, P2D> for WorldGenerator {
         // }
 
         let noise = NOISE.get([(x as f64) * ZOOM, (y as f64) * ZOOM]);
-        let state: CS = if noise <= 0.0 {
-            CS::Empty
-        } else {
-            let color = if noise <= 0.5 { [255, 130, 30, 255] } else { [39, 244, 139, 255] };
-            CS::Color(color)
-        };
+        let state: CS = get_cs(noise);
 
         Cell { state }
     }

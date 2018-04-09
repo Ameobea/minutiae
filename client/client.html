@@ -54,10 +54,9 @@
         canvas: (function() {
           var canvas = document.getElementById('canvas');
 
-          var handleUserEvent = Module.cwrap('handle_user_click', null, ['number', 'number']);
           canvas.onclick = function(e) {
             var coords = canvas.getRelativeMouseCoords(e);
-            handleUserEvent(coords.x, coords.y);
+            Module._handle_user_click(coords.x, coords.y);
           }
 
           // fill canvas with black to start with so we don't have to copy alpha channel data every tick

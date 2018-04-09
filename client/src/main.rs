@@ -19,9 +19,10 @@ use std::slice::from_raw_parts;
 use uuid::Uuid;
 
 use minutiae::server::*;
+use minutiae::emscripten::UserEvent;
 pub use minutiae::server::Tys;
 
-use colony::{color_calculator, ColonyTys};
+use colony::{color_calculator, map_user_event_to_client_message, ColonyTys};
 
 extern {
     /// Used to initialize the websocket connection and start receiving+processing messages from the server
@@ -82,6 +83,22 @@ pub trait GenClient {
     fn handle_bin_message(&mut self, &[u8]);
 
     fn create_snapshot_request(&self) -> Vec<u8>;
+
+    fn handle_click(&self, x: u32, y: u32) {
+        let event = UserEvent::CanvasClick { x, y };
+        match map_user_event_to_client_message(self.get_uuid(), event) {
+            Some(client_msg_contents) => {
+                let client_msg = HybridClientMessage {
+                    client_id: self.get_uuid(),
+                    contents: client_msg_contents,
+                };
+
+                let bin_msg = client_msg.bin_serialize().unwrap();
+                unsafe { send_client_message(bin_msg.as_ptr(), bin_msg.len() as i32) };
+            },
+            None => (),
+        }
+    }
 }
 
 pub trait Client<T: Tys> : GenClient {
@@ -137,11 +154,12 @@ impl<T: Tys> Client<T> {
             return;
         }
 
-        if seq == self.get_state().last_seq + 1 || self.get_state().last_seq == 0 {
-            debug(&format!("Handling message with sequence number {}", seq));
+        if seq == self.get_state().last_seq + 1 || seq == self.get_state().last_seq || self.get_state().last_seq == 0 {
             Client::handle_message(self, message);
 
-            self.get_state().last_seq += 1;
+            if seq == self.get_state().last_seq + 1 || self.get_state().last_seq == 0 {
+                self.get_state().last_seq += 1;
+            }
 
             // if we have buffered messages to handle, apply them now.
             for msg in mem::replace(&mut self.get_state().message_buffer, Vec::new()) {
@@ -159,9 +177,10 @@ impl<T: Tys> Client<T> {
                 unsafe { request_snapshot() };
                 self.get_state().pending_snapshot = true;
             }
-        } else if seq == self.get_state().last_seq {
-            debug(&format!("Received duplicate message with sequence number {}", seq));
         }
+        // } else if seq == self.get_state().last_seq {
+        //     debug(&format!("Received duplicate message with sequence number {}", seq));
+        // }
     }
 }
 
@@ -194,8 +213,8 @@ pub unsafe extern "C" fn request_snapshot() {
 
 /// Function that is called when the user clicks on the canvas.
 #[no_mangle]
-pub extern "C" fn handle_user_click(x: u32, y: u32) {
-    debug(&format!("Handling user click from the Rust side: {{ x: {}, y: {} }}", x, y));
+pub unsafe extern "C" fn handle_user_click(x: u32, y: u32) {
+    (**CLIENT_WRAPPER).handle_click(x, y);
 }
 
 pub fn main() {

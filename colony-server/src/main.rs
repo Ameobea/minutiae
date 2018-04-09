@@ -7,6 +7,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 
 use colony::*;
+use colony::engine::{exec_actions, get_custom_engine};
+use colony::entity_driver::our_entity_driver;
 use colony::sparse_universe::{CellGeneratorWrapper, P2D};
 use colony::world_generator::{WorldGenerator};
 use minutiae::prelude::*;
@@ -32,7 +34,6 @@ fn colony_event_generator(
     let color = if seq % 2 == 0 { [150, 222, 14, 255] } else { [133, 133, 12, 255] };
     let coord = P2D { x: (15 + (seq % 700)) as usize, y: (15 + (seq % 700)) as usize};
     let evt = ColonyEvent::Splat(coord, color);
-    println!("Generated event: {:?}", evt);
     Some(vec![evt])
 }
 
@@ -41,10 +42,14 @@ pub fn main() {
     let universe = Universe2D::new(Universe2DConf { size: 800 }, &mut wrapper);
     let driver = BasicDriver;
 
-    let server_logic: HybridServer<ColonyTys> = HybridServer::new(colony_event_generator);
-    println!("Server message size: {}", ::std::mem::size_of::<<ColonyTys as Tys>::ServerMessage>());
+    let (wrapped_action_executor, server_logic) = HybridServer::<CustomClientMessage, ColonyTys>::hook_handler(
+        exec_actions,
+        colony_event_generator,
+        custom_event_handler
+    );
+    let engine = get_custom_engine::<CS, ES, MES, CA, EA, usize, _, _, _>(wrapped_action_executor, our_entity_driver);
 
-    driver.init(universe, engine::get_engine(), &mut [
+    driver.init(universe, engine, &mut [
         Box::new(Server::new("0.0.0.0:7037", server_logic, Arc::new(AtomicU32::new(0)))),
         Box::new(MinDelay::from_tps(20.)),
     ]);

@@ -254,7 +254,6 @@ fn get_ws_server_future<
                         .map_err(|ws_err| format!("{:?}", ws_err))
                         .for_each(move |server_msg_opt| match server_msg_opt {
                             Some(msg) => {
-                                println!("Got a response from the client message handler: {:?}", msg);
                                 // We have a message that needs to get sent back to the client
                                 // Get the client's sink out of the connection map
                                 let mut connection_map_inner = connection_map

@@ -3,11 +3,13 @@
 //! the client maintains a full copy of the universe's state including cell and entity states.
 
 use std::borrow::Cow;
+use std::fmt::Debug;
 use std::ptr;
 
 use minutiae::prelude::*;
 use minutiae::server::*;
 use minutiae::universe::Into2DIndex;
+use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 use super::{Client, ClientState, GenClient, Tys};
@@ -55,7 +57,11 @@ impl<T: Tys> HybridClient<T> where
 }
 
 impl<
-    T: Tys<ServerMessage=HybridServerMessage<T>> + 'static
+    HCMT: Serialize + for<'d> Deserialize<'d> + Clone + Debug + Send + PartialEq + Eq,
+    T: Tys<
+        ServerMessage=HybridServerMessage<T>,
+        ClientMessage=HybridClientMessage<HCMT>,
+    > + 'static
 > Client<T> for HybridClient<T> where
     T::ServerMessage: ServerMessage<T::Snapshot>,
     T::Snapshot: Universe<T::C, T::E, T::M, Coord=T::I>,
@@ -89,7 +95,11 @@ impl<
 }
 
 impl<
-    T: Tys<ServerMessage=HybridServerMessage<T>> + 'static
+    HCMT: Serialize + for<'d> Deserialize<'d> + Clone + Debug + Send + PartialEq + Eq,
+    T: Tys<
+        ServerMessage=HybridServerMessage<T>,
+        ClientMessage=HybridClientMessage<HCMT>,
+    > + 'static
 > GenClient for HybridClient<T> where
     <T as Tys>::ServerMessage: ServerMessage<<T as Tys>::Snapshot>,
     T::Snapshot: Universe<T::C, T::E, T::M, Coord=T::I>,
@@ -111,7 +121,7 @@ impl<
 
     fn create_snapshot_request(&self) -> Vec<u8> {
         debug("Creating binary snapshot request message...");
-        HybridClientMessage::create_snapshot_request(self.get_uuid())
+        HybridClientMessage::<HCMT>::create_snapshot_request(self.get_uuid())
             .bin_serialize()
             .unwrap()
     }

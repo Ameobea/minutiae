@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use action::OwnedAction;
 
+use prelude::*;
 use super::{ServerMessage, ServerLogic, Tys, ClientMessage};
 
 /// Helper trait to contain some of the massive spam caused in trait definitions.  This requires that implementors are
@@ -138,8 +139,8 @@ impl<T: Tys> HybridServerMessage<T> where T::Snapshot: Clone, T::V: Clone {
 /// A response to a custom message from a client.  The response can contain an optional response back to the client
 /// as well as an optional list of messages to be broadcast to all other connected clients.
 pub struct ClientEventAction<T: Tys> {
-    response_msg: Option<T::ServerMessage>,
-    broadcast_msgs: Option<Vec<T::ServerMessage>>,
+    pub response_msg: Option<T::ServerMessage>,
+    pub broadcast_msgs: Option<Vec<T::ServerMessage>>,
 }
 
 pub struct HybridServer<
@@ -271,8 +272,24 @@ impl<
 }
 
 impl<
+    CS: CellState + Send + 'static,
+    ES: EntityState<CS> + Send,
+    MES: MutEntityState + Send,
+    CA: CellAction<CS> + Send,
+    EA: EntityAction<CS, ES> + Send,
+    I: Ord + Copy + Send + 'static,
+    U: Universe<CS, ES, MES, Coord=I>,
     HCMT: Serialize + for<'d> Deserialize<'d> + Clone + Debug + Send + PartialEq + Eq,
-    T: Tys<ClientMessage=HybridClientMessage<HCMT>>,
+    T: Tys<
+        C=CS,
+        E=ES,
+        M=MES,
+        CA=CA,
+        EA=EA,
+        I=I,
+        U=U,
+        ClientMessage=HybridClientMessage<HCMT>,
+    >,
 > HybridServer<HCMT, T> where
     OwnedAction<T::C, T::E, T::CA, T::EA, T::I>: Clone,
     T::V: Clone,
@@ -281,16 +298,18 @@ impl<
     /// Takes the action handlers for the engine and hooks them, getting an intermediate view of the actions
     /// so that they can be transmitted to the client before handling them on the client side.
     pub fn hook_handler(
-        action_executor: fn(&mut T::U, &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
-            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
-            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
+        action_executor: fn(
+            &mut U,
+            &[OwnedAction<CS, ES, CA, EA, I>],
+            &[OwnedAction<CS, ES, CA, EA, I>],
+            &[OwnedAction<CS, ES, CA, EA, I>]
         ),
         event_generator: fn(
-            universe: &mut T::U,
+            universe: &mut U,
             seq: u32,
-            cell_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
-            self_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
-            entity_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
+            cell_actions: &[OwnedAction<CS, ES, CA, EA, I>],
+            self_actions: &[OwnedAction<CS, ES, CA, EA, I>],
+            entity_actions: &[OwnedAction<CS, ES, CA, EA, I>]
         ) -> Option<Vec<T::V>>,
         client_event_handler: fn(
             universe: &mut T::U,
@@ -299,10 +318,10 @@ impl<
         ) -> ClientEventAction<T>
     ) -> (
         impl Fn(
-            &mut T::U,
-            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
-            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
-            &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
+            &mut U,
+            &[OwnedAction<CS, ES, CA, EA, I>],
+            &[OwnedAction<CS, ES, CA, EA, I>],
+            &[OwnedAction<CS, ES, CA, EA, I>]
         ),
         Self,
     ) {
@@ -332,7 +351,7 @@ impl<
         (hooked_handler, hybrid_server)
     }
 
-    pub fn new(
+    fn new(
         event_generator: fn(
             universe: &mut T::U,
             seq: u32,
