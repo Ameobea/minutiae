@@ -6,7 +6,6 @@ use std::cmp::{Ord, Ordering};
 use std::fmt::{self, Debug, Formatter};
 use std::marker::PhantomData;
 use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 
 use futures::Future;
 use futures::sync::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
@@ -36,17 +35,26 @@ pub enum HybridServerMessageContents<T: Tys> {
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone, Deserialize)]
-pub struct HybridClientMessage {
+#[serde(bound = "T: for<'d> Deserialize<'d>")]
+pub struct HybridClientMessage<
+    T: Serialize + for<'d> Deserialize<'d> + Clone + PartialEq + Eq
+> {
     pub client_id: Uuid,
-    pub contents: HybridClientMessageContents,
+    pub contents: HybridClientMessageContents<T>,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Clone, Deserialize)]
-pub enum HybridClientMessageContents {
+#[serde(bound = "T: for<'d> Deserialize<'d>")]
+pub enum HybridClientMessageContents<
+    T: Serialize + for<'d> Deserialize<'d> + Clone + PartialEq + Eq
+> {
     RequestSnapshot,
+    Custom(T),
 }
 
-impl ClientMessage for HybridClientMessage {
+impl<
+    T: Serialize + for<'d> Deserialize<'d> + Clone + Debug + Send + PartialEq + Eq
+> ClientMessage for HybridClientMessage<T> {
     fn get_client_id(&self) -> Uuid { self.client_id }
 
     fn create_snapshot_request(client_id: Uuid) -> Self {
@@ -127,12 +135,22 @@ impl<T: Tys> HybridServerMessage<T> where T::Snapshot: Clone, T::V: Clone {
     }
 }
 
-pub struct HybridServer<T: Tys> where
+/// A response to a custom message from a client.  The response can contain an optional response back to the client
+/// as well as an optional list of messages to be broadcast to all other connected clients.
+pub struct ClientEventAction<T: Tys> {
+    response_msg: Option<T::ServerMessage>,
+    broadcast_msgs: Option<Vec<T::ServerMessage>>,
+}
+
+pub struct HybridServer<
+    HCMT: Serialize + for<'d> Deserialize<'d> + Clone + Debug + Send + PartialEq + Eq,
+    T: Tys<ClientMessage=HybridClientMessage<HCMT>>,
+> where
     T::Snapshot: Clone,
     T::V: Clone,
 {
-    seq: Arc<AtomicU32>,
     snapshot_requests: Vec<OneshotSender<(u32, T::Snapshot)>>,
+    custom_actions: Vec<(OneshotSender<Option<HybridServerMessage<T>>>, HCMT)>,
     event_generator: fn(
         universe: &mut T::U,
         seq: u32,
@@ -140,14 +158,23 @@ pub struct HybridServer<T: Tys> where
         self_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
         entity_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
     ) -> Option<Vec<T::V>>,
+    client_event_handler: fn(
+        universe: &mut T::U,
+        seq: u32,
+        custom_action: HCMT
+    ) -> ClientEventAction<T>,
     self_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
     cell_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
     entity_actions: Arc<RwLock<Vec<OwnedAction<T::C, T::E, T::CA, T::EA, T::I>>>>,
 }
 
 impl<
-    T: Tys<ServerMessage=HybridServerMessage<T>
->> ServerLogic<T, HybridClientMessage> for HybridServer<T> where
+    HCMT: Serialize + for<'d> Deserialize<'d> + Clone + Debug + Send + Sync + PartialEq + Eq + 'static,
+    T: Tys<
+        ServerMessage=HybridServerMessage<T>,
+        ClientMessage=HybridClientMessage<HCMT>,
+    >,
+> ServerLogic<T> for HybridServer<HCMT, T> where
     T: 'static,
     T::C: Send + Sync + Clone,
     T::E: Send + Sync + Clone,
@@ -158,6 +185,7 @@ impl<
     T::EA: Send + Sync + Clone,
     T::V: Clone + Send,
     T::Snapshot: Serialize + for<'de> Deserialize<'de> + Clone + Send + From<T::U>,
+    T::ServerMessage: Send + Sync,
 {
     fn tick(
         &mut self,
@@ -168,6 +196,21 @@ impl<
         for oneshot_tx in self.snapshot_requests.drain(..) {
             println!("Fulfilling snapshot request...");
             let _ = oneshot_tx.send((seq, universe.clone().into(),));
+        }
+
+        // Handle any pending custom action
+        let mut msgs_to_broadcast: Option<Vec<HybridServerMessage<T>>> = None;
+        for (oneshot_tx, hcmt) in self.custom_actions.drain(..) {
+            let ClientEventAction { response_msg, broadcast_msgs } = (self.client_event_handler)(universe, seq, hcmt);
+            let _ = oneshot_tx.send(response_msg);
+
+            // If this custom event produced messages to broadcast, merge them with the existing list of messages to broadcast.
+            msgs_to_broadcast = match (msgs_to_broadcast, broadcast_msgs) {
+                (None, Some(msgs)) => Some(msgs),
+                (None, None) => None,
+                (Some(msgs), None) => Some(msgs),
+                (Some(output_msgs), Some(msgs)) => Some([&output_msgs[..], &msgs[..]].concat()),
+            };
         }
 
         let pending_messages: Option<Vec<T::V>> = None;
@@ -193,16 +236,20 @@ impl<
             None => pending_messages.unwrap_or(vec![]),
         };
 
-        Some(vec![HybridServerMessage::new(
-            self.seq.load(AtomicOrdering::Relaxed),
-            HybridServerMessageContents::Event(merged_events)
-        )])
+        let merged_events_msg = HybridServerMessage::new(seq, HybridServerMessageContents::Event(merged_events));
+        match msgs_to_broadcast {
+            Some(mut msgs) => {
+                msgs.push(merged_events_msg);
+                Some(msgs)
+            },
+            None => Some(vec![merged_events_msg]),
+        }
     }
 
     fn handle_client_message(
         &mut self,
-        _seq: Arc<AtomicU32>,
-        message: &HybridClientMessage
+        _seq: u32,
+        message: HybridClientMessage<HCMT>
     ) -> Box<Future<Item=Option<HybridServerMessage<T>>, Error=!>> {
         println!("Handling client message: {:?}", message);
         match message.contents {
@@ -216,11 +263,17 @@ impl<
                         Some(server_message)
                     })
             },
+            HybridClientMessageContents::Custom(hcmt) => {
+                box self.handle_custom_message(hcmt)
+            }
         }
     }
 }
 
-impl<T: Tys> HybridServer<T> where
+impl<
+    HCMT: Serialize + for<'d> Deserialize<'d> + Clone + Debug + Send + PartialEq + Eq,
+    T: Tys<ClientMessage=HybridClientMessage<HCMT>>,
+> HybridServer<HCMT, T> where
     OwnedAction<T::C, T::E, T::CA, T::EA, T::I>: Clone,
     T::V: Clone,
     T::Snapshot: Clone,
@@ -238,7 +291,12 @@ impl<T: Tys> HybridServer<T> where
             cell_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
             self_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
             entity_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
-        ) -> Option<Vec<T::V>>
+        ) -> Option<Vec<T::V>>,
+        client_event_handler: fn(
+            universe: &mut T::U,
+            seq: u32,
+            custom_event: HCMT
+        ) -> ClientEventAction<T>
     ) -> (
         impl Fn(
             &mut T::U,
@@ -248,7 +306,7 @@ impl<T: Tys> HybridServer<T> where
         ),
         Self,
     ) {
-        let hybrid_server = HybridServer::new(event_generator);
+        let hybrid_server = HybridServer::new(event_generator, client_event_handler);
         // create copies of the buffers so that we can write to them from outside
         let self_action_buf = hybrid_server.self_actions.clone();
         let cell_action_buf = hybrid_server.cell_actions.clone();
@@ -281,12 +339,18 @@ impl<T: Tys> HybridServer<T> where
             cell_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
             self_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>],
             entity_actions: &[OwnedAction<T::C, T::E, T::CA, T::EA, T::I>]
-        ) -> Option<Vec<T::V>>
+        ) -> Option<Vec<T::V>>,
+        client_event_handler: fn(
+            universe: &mut T::U,
+            seq: u32,
+            custom_action: HCMT
+        ) -> ClientEventAction<T>
     ) -> Self {
         HybridServer {
-            seq: Arc::new(AtomicU32::new(0)),
             event_generator,
+            client_event_handler,
             snapshot_requests: Vec::new(),
+            custom_actions: Vec::new(),
             self_actions: Arc::new(RwLock::new(Vec::new())),
             cell_actions: Arc::new(RwLock::new(Vec::new())),
             entity_actions: Arc::new(RwLock::new(Vec::new())),
@@ -296,6 +360,15 @@ impl<T: Tys> HybridServer<T> where
     fn request_snapshot(&mut self) -> impl Future<Item=(u32, T::Snapshot), Error=!> {
         let (oneshot_tx, oneshot_rx) = oneshot_channel();
         self.snapshot_requests.push(oneshot_tx);
+        oneshot_rx.map_err(|_| unreachable!())
+    }
+
+    fn handle_custom_message(
+        &mut self,
+        custom_message: HCMT
+    ) -> impl Future<Item=Option<HybridServerMessage<T>>, Error=!> {
+        let (oneshot_tx, oneshot_rx) = oneshot_channel();
+        self.custom_actions.push((oneshot_tx, custom_message,));
         oneshot_rx.map_err(|_| unreachable!())
     }
 }

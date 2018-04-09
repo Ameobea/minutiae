@@ -2,21 +2,19 @@ use minutiae::prelude::*;
 use minutiae::engine::parallel::ParallelEngine;
 
 use entity_driver::our_entity_driver;
-use sparse_universe::{P2D, Sparse2DUniverse};
-use world_generator::WorldGenerator;
 use super::*;
 
 pub fn exec_actions(
-    universe: &mut Sparse2DUniverse<CS, ES, MES, WorldGenerator>,
-    cell_actions: &[OwnedAction<CS, ES, CA, EA, P2D>],
-    self_actions: &[OwnedAction<CS, ES, CA, EA, P2D>],
-    entity_actions: &[OwnedAction<CS, ES, CA, EA, P2D>],
+    _universe: &mut Universe2D<CS, ES, MES>,
+    _cell_actions: &[OwnedAction<CS, ES, CA, EA, usize>],
+    _self_actions: &[OwnedAction<CS, ES, CA, EA, usize>],
+    _entity_actions: &[OwnedAction<CS, ES, CA, EA, usize>],
 ) {
 
 }
 
 pub fn get_engine<'u>() -> impl Engine<
-    CS, ES, MES, CA, EA, Sparse2DUniverse<CS, ES, MES, WorldGenerator>
+    CS, ES, MES, CA, EA, Universe2D<CS, ES, MES>
 > {
     let engine: ParallelEngine<
         CS,
@@ -24,11 +22,9 @@ pub fn get_engine<'u>() -> impl Engine<
         MES,
         CA,
         EA,
-        P2D,
-        Sparse2DUniverse<CS, ES, MES, WorldGenerator>,
-        Sparse2DUniverse<CS, ES, MES, WorldGenerator>,
-        // Vec<Cell<CS>>,
-        // Universe2D<CS, ES, MES>,
+        usize,
+        Vec<Cell<CS>>,
+        Universe2D<CS, ES, MES>,
         _
     > = ParallelEngine::new(exec_actions, our_entity_driver);
 

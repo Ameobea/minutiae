@@ -1,4 +1,3 @@
 {
-  "rust.features": ["serde", "server", "client"],
   "rust-client.channel": "nightly-2018-03-15"
 }

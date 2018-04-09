@@ -58,14 +58,12 @@ type WebsocketClientSink = SplitSink<Framed<TcpStream, MessageCodec<OwnedWsMessa
 #[derive(Clone)]
 pub struct Server<
     T: Tys,
-    CM: Message,
-    L: ServerLogic<T, CM>,
+    L: ServerLogic<T>,
 > {
     seq: Arc<AtomicU32>,
     logic: Arc<Mutex<L>>,
     connection_map: Arc<RwLock<HashMap<Id, UnboundedSender<OwnedWsMessage>>>>,
     __phantom_t: PhantomData<T>,
-    __phantom_cm: PhantomData<CM>,
 }
 
 fn spawn_future<
@@ -81,14 +79,14 @@ fn spawn_future<
 
 fn handle_client_message<
     T: Tys,
-    CM: Message + Debug + Send,
-    L: ServerLogic<T, CM> + Send + 'static,
+    L: ServerLogic<T> + Send + 'static,
 > (
     msg: OwnedWsMessage,
     seq: Arc<AtomicU32>,
     logic: Arc<Mutex<L>>
 ) -> Box<Future<Item=Option<OwnedWsMessage>, Error=WebSocketError>> where
-    T::ServerMessage: 'static
+    T::ServerMessage: 'static,
+    T::ClientMessage: Debug,
 {
     println!("Message from Client: {:?}", msg);
     match msg {
@@ -100,7 +98,7 @@ fn handle_client_message<
         },
         OwnedWsMessage::Binary(msg_content) => {
             // Deserialize into the appropriate `ClientMessage`
-            let client_msg: CM = match CM::bin_deserialize(&msg_content) {
+            let client_msg: T::ClientMessage = match T::ClientMessage::bin_deserialize(&msg_content) {
                 Ok(m) => m,
                 Err(err) => {
                     println!("Error deserializing `ClientMessage` from binary data sent from user: {:?}", err);
@@ -113,7 +111,7 @@ fn handle_client_message<
             box logic
                 .lock()
                 .unwrap()
-                .handle_client_message(seq, &client_msg)
+                .handle_client_message(seq.load(Ordering::Relaxed), client_msg)
                 .and_then(|opt| Ok(opt.map(|server_msg| {
                     println!(
                         "Serializing `{}` into binary to send to client...",
@@ -153,14 +151,14 @@ fn create_client_sink_handler(
 
 fn get_ws_server_future<
     T: Tys,
-    CM: Message + Debug + Send,
-    L: ServerLogic<T, CM> + Send + 'static,
+    L: ServerLogic<T> + Send + 'static,
 >(
     ws_host: &'static str,
     seq: Arc<AtomicU32>,
     logic: Arc<Mutex<L>>
 ) -> OneshotReceiver<Arc<RwLock<HashMap<Id, UnboundedSender<OwnedWsMessage>>>>> where
     T::ServerMessage: 'static,
+    T::ClientMessage: Debug,
 {
     let (oneshot_tx, oneshot_rx) = oneshot_channel();
 
@@ -300,9 +298,11 @@ fn get_ws_server_future<
 
 impl<
     T: Tys,
-    CM: Message + Debug + Send,
-    L: ServerLogic<T, CM> + Send + 'static,
-> Server<T, CM, L> where T::ServerMessage: 'static {
+    L: ServerLogic<T> + Send + 'static,
+> Server<T, L> where
+    T::ServerMessage: 'static,
+    T::ClientMessage: Debug,
+{
     pub fn new(
         ws_host: &'static str,
         logic: L,
@@ -319,7 +319,6 @@ impl<
             seq,
             logic,
             connection_map,
-            __phantom_cm: PhantomData,
             __phantom_t: PhantomData,
         }
     }
@@ -327,9 +326,8 @@ impl<
 
 impl<
     T: Tys,
-    CM: Message,
-    L: ServerLogic<T, CM>,
-> Server<T, CM, L> {
+    L: ServerLogic<T>,
+> Server<T, L> {
     pub fn get_seq(&self) -> u32 {
         self.seq.load(Ordering::Relaxed)
     }
@@ -350,10 +348,9 @@ impl<
 
 impl<
     T: Tys,
-    CM: Message,
-    L: ServerLogic<T, CM>,
+    L: ServerLogic<T>,
     N: Engine<T::C, T::E, T::M, T::CA, T::EA, T::U>,
-> Middleware<T::C, T::E, T::M, T::CA, T::EA, T::U, N> for Box<Server<T, CM, L>> {
+> Middleware<T::C, T::E, T::M, T::CA, T::EA, T::U, N> for Box<Server<T, L>> {
     fn after_render(&mut self, universe: &mut T::U) {
         let mut logic_inner = self.logic.lock().unwrap();
         if let Some(msgs) = logic_inner.tick(self.get_seq(), universe) {

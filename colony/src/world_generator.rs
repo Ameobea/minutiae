@@ -32,7 +32,7 @@ impl CellGenerator<CS, ES, MES, P2D> for WorldGenerator {
         Cell { state }
     }
 
-    fn gen_initial_entities(universe_index: P2D) -> Vec<Entity<CS, ES, MES>> {
+    fn gen_initial_entities(_universe_index: P2D) -> Vec<Entity<CS, ES, MES>> {
         Vec::new()
     }
 }

@@ -145,3 +145,16 @@ impl<
         }
     }
 }
+
+pub enum KeyPress {
+    Character(char),
+    Enter,
+    Other(u8),
+}
+
+/// Represents an action that the user can take in the web UI.
+pub enum UserEvent {
+    CanvasClick{ x: u32, y: u32 },
+    KeyPress,
+    Custom(Vec<u8>),
+}

@@ -6,12 +6,9 @@
 //! between ticks are not very large (large differences cause large bandwidth usage).
 
 use std::cmp::Ordering;
-use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 
 use futures::Future;
 use futures::future::ok;
-#[cfg(test)]
-use test;
 use uuid::Uuid;
 
 use super::*;
@@ -146,9 +143,12 @@ impl<
 }
 
 impl<
-    T: Tys<ServerMessage=ThinServerMessage>,
+    T: Tys<
+        ServerMessage=ThinServerMessage,
+        ClientMessage=ThinClientMessage,
+    >,
     I: ExactSizeIterator<Item=T::I> + Clone + 'static,
-> ServerLogic<T, ThinClientMessage> for ColorServer<T, I> where
+> ServerLogic<T> for ColorServer<T, I> where
     T::I: Clone + Copy + Ord + Clone + Sync + 'static,
     ThinServerMessage: ServerMessage<<T as Tys>::Snapshot>,
     T::Snapshot: Clone,
@@ -183,15 +183,15 @@ impl<
 
     fn handle_client_message(
         &mut self,
-        seq: Arc<AtomicU32>,
-        client_message: &ThinClientMessage
+        seq: u32,
+        client_message: ThinClientMessage
     ) -> Box<Future<Item=Option<ThinServerMessage>, Error=!>> {
         match client_message.content {
             ThinClientMessageContent::SendSnapshot => {
                 // create the snapshot by cloning the colors from the server.
                 let snap: Vec<Color> = self.colors.read().unwrap().clone();
                 box ok(Some(ThinServerMessage {
-                    seq: seq.load(AtomicOrdering::Relaxed),
+                    seq,
                     contents: ThinServerMessageContents::Snapshot(snap),
                 }))
             },
@@ -221,7 +221,7 @@ fn server_message_encode(b: &mut test::Bencher) {
 
 #[bench]
 /// Tests the process of decompressing a compressed binary representation of a message and making it back into a message.
-fn server_message_decode(b: &mut test::Bencher) {
+fn server_message_decode(b: &mut ::test::Bencher) {
     let message = ThinServerMessage {
         seq: 100012,
         contents: ThinServerMessageContents::Diff(vec![Diff{universe_index: 100, color: Color([9u8, 144u8, 88u8])}; 100000]),

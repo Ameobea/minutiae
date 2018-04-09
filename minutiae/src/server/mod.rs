@@ -4,7 +4,6 @@ use std::cmp::{PartialOrd, Ord};
 use std::fmt::Debug;
 use std::io::BufReader;
 use std::sync::{Arc, RwLock};
-use std::sync::atomic::AtomicU32;
 
 use bincode::{self, serialize_into, serialized_size};
 use flate2::Compression;
@@ -67,6 +66,18 @@ pub trait Tys : Clone + Copy + Send {
 
     #[cfg(feature = "fat")]
     type ServerMessage: ServerMessage<Self::Snapshot> = (); // TODO
+
+    #[cfg(not(any(feature = "thin", feature = "hybrid", feature = "fat")))]
+    type ClientMessage: ClientMessage = ();
+
+    #[cfg(feature = "thin")]
+    type ClientMessage: ClientMessage = ThinClientMessage;
+
+    #[cfg(feature = "hybrid")]
+    type ClientMessage: ClientMessage = HybridClientMessage;
+
+    #[cfg(feature = "fat")]
+    type ClientMessage: ClientMessage = (); // TODO
 }
 
 /// A message that is passed over the websocket between the server and a client.
@@ -130,15 +141,15 @@ pub trait CompressedMessage: Sized + Send + PartialEq + Serialize {
     }
 }
 
-pub trait ServerLogic<T: Tys, CM: Message>: Sync {
+pub trait ServerLogic<T: Tys>: Sync {
     /// Called every tick; the resulting messages are broadcast to every connected client.
     fn tick(&mut self, seq: u32, universe: &mut T::U) -> Option<Vec<T::ServerMessage>>;
     /// Called for every message received from a client; the resulting messages are broadcast to the
     /// client that sent the message.
     fn handle_client_message(
         &mut self,
-        seq: Arc<AtomicU32>,
-        &CM
+        seq: u32,
+        T::ClientMessage
     ) -> Box<Future<Item=Option<T::ServerMessage>, Error=!>>;
 }
 

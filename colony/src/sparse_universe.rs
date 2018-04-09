@@ -1,3 +1,8 @@
+//! An attempt at a sparse universe that only keeps track of cells that have actually changed.  It turns out that
+//! this implementation at least was incredibly, ridiculously slow and not in any way worth it.
+//!
+//! Don't use this.
+
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -10,6 +15,8 @@ use minutiae::util::get_coords;
 #[cfg(test)]
 use test;
 
+use super::UNIVERSE_SIZE;
+
 /// A world generator that can generate the initial values for arbitrary cells on demand without
 /// needing to generate surrounding cells.
 pub trait CellGenerator<
@@ -21,6 +28,61 @@ pub trait CellGenerator<
     fn gen_cell(universe_index: I) -> Cell<CS>;
 
     fn gen_initial_entities(universe_index: I) -> Vec<Entity<CS, ES, MES>>;
+}
+
+/// Small market struct that can get a `CellGenerator` to function as a normal `Generator`.
+pub struct CellGeneratorWrapper<
+    CS: CellState,
+    ES: EntityState<CS>,
+    MES: MutEntityState,
+    I: Ord + Into2DIndex,
+    CG: CellGenerator<CS, ES, MES, I>,
+>(
+    PhantomData<CS>,
+    PhantomData<ES>,
+    PhantomData<MES>,
+    PhantomData<I>,
+    PhantomData<CG>
+);
+
+impl<
+    CS: CellState,
+    ES: EntityState<CS>,
+    MES: MutEntityState,
+    I: Ord + Into2DIndex,
+    CG: CellGenerator<CS, ES, MES, I>,
+> CellGeneratorWrapper<CS, ES, MES, I, CG> {
+    pub fn new() -> Self {
+        CellGeneratorWrapper(
+            PhantomData,
+            PhantomData,
+            PhantomData,
+            PhantomData,
+            PhantomData
+        )
+    }
+}
+
+impl<
+    CS: CellState,
+    ES: EntityState<CS>,
+    MES: MutEntityState,
+    I: Ord + Into2DIndex,
+    CG: CellGenerator<CS, ES, MES, I>,
+> Generator<CS, ES, MES> for CellGeneratorWrapper<CS, ES, MES, I, CG> {
+    fn gen(&mut self, conf: &Universe2DConf) -> (Vec<Cell<CS>>, Vec<Vec<Entity<CS, ES, MES>>>) {
+        let cells = (0..(conf.size * conf.size) as usize)
+            .map(|universe_index: usize| -> I { I::from_2d_index(UNIVERSE_SIZE, universe_index) })
+            .map(|coord| CG::gen_cell(coord))
+            .collect();
+
+        let entities = (0..(conf.size * conf.size) as usize)
+            .map(|universe_index: usize| -> I { I::from_2d_index(UNIVERSE_SIZE, universe_index) })
+            .map(|coord| CG::gen_initial_entities(coord))
+            .collect();
+
+        (cells, entities)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

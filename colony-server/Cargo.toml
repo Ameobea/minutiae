@@ -1,0 +1,8 @@
+[package]
+name = "colony-server"
+version = "0.1.0"
+authors = ["Casey Primozic <me@ameo.link>"]
+
+[dependencies]
+minutiae = { features = ["serde_support", "server"], path = "../minutiae", version = "0.10.0" }
+colony = { path = "../colony" }

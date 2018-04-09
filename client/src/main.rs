@@ -96,7 +96,6 @@ impl<T: Tys> Client<T> {
     // TODO: Actually use sequence numbers in a somewhat intelligent manner
     // TODO: Wait until the response from the snapshot request before applying diffs
     pub fn handle_binary_message(&mut self, slice: &[u8]) {
-        debug(&format!("Binary message received: {:?}", slice));
         // decompress and deserialize the message buffer into a `T::ServerMessage`
         let message: T::ServerMessage = match T::ServerMessage::bin_deserialize(slice) {
             Ok(msg) => msg,
@@ -122,10 +121,12 @@ impl<T: Tys> Client<T> {
                 // swap the buffer out of the state so we can mutably borrow the client
                 let mut messages = mem::replace(&mut self.get_state().message_buffer, Vec::new());
                 // sort all pending messages, discard any from before the snapshot was received, and apply the rest
-                messages.sort();
+                messages.sort_unstable();
 
                 for queued_msg in messages {
                     if queued_msg.get_seq() > seq {
+                        // TODO: Look into handling missed messages in the queue.
+                        self.get_state().last_seq = queued_msg.get_seq();
                         Client::handle_message(self, queued_msg);
                     }
                 }
@@ -137,7 +138,7 @@ impl<T: Tys> Client<T> {
         }
 
         if seq == self.get_state().last_seq + 1 || self.get_state().last_seq == 0 {
-            debug(format!("Handling message with sequence number {}", seq));
+            debug(&format!("Handling message with sequence number {}", seq));
             Client::handle_message(self, message);
 
             self.get_state().last_seq += 1;
@@ -183,12 +184,18 @@ pub unsafe extern "C" fn process_message(message_ptr: *const u8, message_len: c_
     // The same goes for drawing the updated universe to the canas.
 }
 
-#[no_mangle]
 /// Sends a message to the server requesting a snapshot of the current universe
+#[no_mangle]
 pub unsafe extern "C" fn request_snapshot() {
     let msg: Vec<u8> = (**CLIENT_WRAPPER).create_snapshot_request();
     debug("Sending message requesting snapshot from the server...");
     send_client_message(msg.as_ptr(), msg.len() as i32);
+}
+
+/// Function that is called when the user clicks on the canvas.
+#[no_mangle]
+pub extern "C" fn handle_user_click(x: u32, y: u32) {
+    debug(&format!("Handling user click from the Rust side: {{ x: {}, y: {} }}", x, y));
 }
 
 pub fn main() {

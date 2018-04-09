@@ -4,6 +4,7 @@
     <meta charset='utf-8'>
     <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
     <title>Minutiae Thin Client</title>
+
     <style>
     body {
       background-color: black;
@@ -18,6 +19,27 @@
       -ms-interpolation-mode: nearest-neighbor;   /* IE                            */
     }
     </style>
+
+    <script type="text/javascript">
+      function relMouseCoords(event){
+        var totalOffsetX = 0;
+        var totalOffsetY = 0;
+        var canvasX = 0;
+        var canvasY = 0;
+        var currentElement = this;
+
+        do {
+          totalOffsetX += currentElement.offsetLeft - currentElement.scrollLeft;
+          totalOffsetY += currentElement.offsetTop - currentElement.scrollTop;
+        } while(currentElement = currentElement.offsetParent)
+
+        canvasX = event.pageX - totalOffsetX;
+        canvasY = event.pageY - totalOffsetY;
+
+        return {x: canvasX, y: canvasY}
+      }
+      HTMLCanvasElement.prototype.getRelativeMouseCoords = relMouseCoords;
+    </script>
   </head>
   <body>
     <canvas id='canvas' width='800' height='800'>
@@ -31,6 +53,12 @@
         postRun: [],
         canvas: (function() {
           var canvas = document.getElementById('canvas');
+
+          var handleUserEvent = Module.cwrap('handle_user_click', null, ['number', 'number']);
+          canvas.onclick = function(e) {
+            var coords = canvas.getRelativeMouseCoords(e);
+            handleUserEvent(coords.x, coords.y);
+          }
 
           // fill canvas with black to start with so we don't have to copy alpha channel data every tick
           var ctx = canvas.getContext("2d");

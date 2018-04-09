@@ -3,10 +3,6 @@ authors = ["Casey Primozic <me@ameo.link>"]
 name = "colony"
 version = "0.1.0"
 
-[[bin]]
-name = "server"
-path = "src/server.rs"
-
 [dependencies]
 lazy_static = "1.0.0"
 noise = "0.5.1"
