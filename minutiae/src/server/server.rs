@@ -12,11 +12,11 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::thread;
 
 use futures::{Future, Sink, Stream};
+use futures::future::ok;
 use futures::sync::mpsc::{unbounded, UnboundedSender};
 use futures::sync::oneshot::{channel as oneshot_channel, Receiver as OneshotReceiver};
 use futures::stream::SplitSink;
 use futures::sync::mpsc;
-use futures::future::ok;
 use futures_cpupool::CpuPool;
 use tokio_core::reactor::{Handle, Core};
 use websocket::message::OwnedMessage as OwnedWsMessage;
@@ -88,7 +88,6 @@ fn handle_client_message<
     T::ServerMessage: 'static,
     T::ClientMessage: Debug,
 {
-    println!("Message from Client: {:?}", msg);
     match msg {
         OwnedWsMessage::Ping(p) => box ok(Some(OwnedWsMessage::Pong(p))),
         OwnedWsMessage::Pong(_) => box ok(None),
@@ -105,23 +104,22 @@ fn handle_client_message<
                     return box ok(None);
                 }
             };
-            println!("Received message from client: {:?}", client_msg);
+            println!("Received message from client: {:#?}", client_msg);
 
             // Handle the received message with the provided server logic
-            box logic
-                .lock()
-                .unwrap()
-                .handle_client_message(seq.load(Ordering::Relaxed), client_msg)
-                .and_then(|opt| Ok(opt.map(|server_msg| {
-                    println!(
-                        "Serializing `{}` into binary to send to client...",
-                        unsafe { type_name::<T::ServerMessage>() }
-                    );
-                    OwnedWsMessage::Binary(server_msg
-                        .bin_serialize()
-                        .expect("Error while serializing `ServerMessage` into binary!")
-                )})))
-                .map_err(|_| unreachable!())
+            box {
+                logic.lock()
+                    .unwrap()
+                    .handle_client_message(seq.load(Ordering::Relaxed), client_msg)
+            }.and_then(|opt| Ok(opt.map(|server_msg| {
+                println!(
+                    "Serializing `{}` into binary to send to client...",
+                    unsafe { type_name::<T::ServerMessage>() }
+                );
+                OwnedWsMessage::Binary(server_msg
+                    .bin_serialize()
+                    .expect("Error while serializing `ServerMessage` into binary!")
+            )}))).map_err(|_| unreachable!())
         }
         OwnedWsMessage::Close(_) => {
             println!("Received close message from client");
@@ -199,7 +197,6 @@ fn get_ws_server_future<
 
                 // accept the request to be a ws connection if it does
                 let connection_handler_future = upgrade
-                    // .use_protocol("rust-websocket") // TODO: Check if this is a problem
                     .accept()
                     .and_then(move |(framed, _)| {
                         let (sink, client_message_stream) = framed.split();
@@ -235,51 +232,65 @@ fn get_ws_server_future<
         let client_stream_handler = pool.spawn_fn(move || {
             let remote_clone = remote.clone();
             let seq = seq;
-            let connection_map = Arc::clone(&connection_map_clone2);
+            let conn_map = Arc::clone(&connection_map_clone2);
 
             receive_channel_in.for_each(move |(client_id, client_message_stream)| {
-                let seq_clone = Arc::clone(&seq);
-                let remote_inner = remote_clone.clone();
-                let logic_clone = Arc::clone(&logic);
-                let connection_map = Arc::clone(&connection_map);
+                let seq = Arc::clone(&seq);
+                let remote = remote_clone.clone();
+                let remote_clone = remote_clone.clone();
+                let logic = Arc::clone(&logic);
+                let conn_map = Arc::clone(&conn_map);
 
-                remote_inner.spawn(move |_| {
-                    let seq_clone_clone = Arc::clone(&seq_clone);
-                    let logic_clone_clone = Arc::clone(&logic_clone);
+                remote.spawn(move |_| {
+                    let seq = Arc::clone(&seq);
+                    let logic = Arc::clone(&logic);
 
                     client_message_stream
-                        .and_then(move |msg| {
-                            handle_client_message(msg, Arc::clone(&seq_clone_clone), Arc::clone(&logic_clone_clone))
-                        })
-                        .map_err(|ws_err| format!("{:?}", ws_err))
-                        .for_each(move |server_msg_opt| match server_msg_opt {
-                            Some(msg) => {
-                                // We have a message that needs to get sent back to the client
-                                // Get the client's sink out of the connection map
-                                let mut connection_map_inner = connection_map
-                                    .read()
-                                    .expect("Unable to lock connect_map for reading in message handler!");
-                                let client_tx = match connection_map_inner.get(&client_id) {
-                                    Some(tx) => tx,
-                                    None => {
-                                        return Err(format!(
-                                            "No entry in connection map for client {}; assuming they disconnected.",
-                                            client_id
-                                        ));
-                                    }
-                                };
+                        .for_each(move |msg| {
+                            let seq = Arc::clone(&seq);
+                            let logic = Arc::clone(&logic);
+                            let conn_map = Arc::clone(&conn_map);
 
-                                client_tx.unbounded_send(msg).expect("Unable to send message through server message channel!");
-                                Ok(())
-                            },
-                            None => {
-                                println!("Server response handler returned `None`.");
-                                Ok(())
-                            },
+                            remote_clone.spawn(move |_| {
+                                handle_client_message(
+                                    msg,
+                                    Arc::clone(&seq),
+                                    Arc::clone(&logic)
+                                )
+                                    .map_err(move |ws_err: WebSocketError| -> () {
+                                        println!("WS err: {:?}", ws_err)
+                                    })
+                                    .and_then(move |server_msg_opt| match server_msg_opt {
+                                        Some(msg) => {
+                                            // We have a message that needs to get sent back to the client
+                                            // Get the client's sink out of the connection map
+                                            let mut conn_map_inner = conn_map
+                                                .read()
+                                                .expect("Unable to lock connect_map for reading in message handler!");
+                                            let client_tx = match conn_map_inner.get(&client_id) {
+                                                Some(tx) => tx,
+                                                None => {
+                                                    println!(
+                                                        "No entry in connection map for client {}; {}",
+                                                        client_id,
+                                                        "assuming they disconnected."
+                                                    );
+                                                    return Err(());
+                                                }
+                                            };
+
+                                            client_tx.unbounded_send(msg)
+                                                .expect("Unable to send message through server message channel!");
+
+                                            Ok(())
+                                        },
+                                        None => Ok(()),
+                                    })
+                            });
+
+                            Ok(())
                         })
-                        .map_err(|err| {
-                            println!("Error while handling client message: {}", err);
-                        })
+                        .map_err(|ws_err| -> () { println!("WS err: {:?}", ws_err) })
                 });
 
                 Ok(())

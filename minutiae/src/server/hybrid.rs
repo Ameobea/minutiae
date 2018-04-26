@@ -252,7 +252,6 @@ impl<
         _seq: u32,
         message: HybridClientMessage<HCMT>
     ) -> Box<Future<Item=Option<HybridServerMessage<T>>, Error=!>> {
-        println!("Handling client message: {:?}", message);
         match message.contents {
             HybridClientMessageContents::RequestSnapshot => {
                 box self.request_snapshot()
