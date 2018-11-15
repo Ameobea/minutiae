@@ -3,17 +3,17 @@
 
 use std::cell::RefCell;
 use std::mem;
+use std::os::raw::{c_float, c_int, c_void};
 use std::ptr::{self, null_mut};
-use std::os::raw::{c_int, c_void, c_float};
 
 use prelude::*;
 use universe::Universe2D;
 use util::ColorCalculator;
 
 #[allow(non_camel_case_types)]
-type em_callback_func = unsafe extern fn();
+type em_callback_func = unsafe extern "C" fn();
 
-extern {
+extern "C" {
     pub fn emscripten_set_main_loop(func: em_callback_func, fps: c_int, simulate_infinite_loop: c_int);
     pub fn emscripten_cancel_main_loop();
     pub fn emscripten_get_now() -> c_float;
@@ -21,14 +21,22 @@ extern {
 
 thread_local!(static MAIN_LOOP_CALLBACK: RefCell<*mut c_void> = RefCell::new(null_mut()));
 
-pub fn set_main_loop_callback<F>(callback: F) where F: FnMut() {
+pub fn set_main_loop_callback<F>(callback: F)
+where
+    F: FnMut(),
+{
     MAIN_LOOP_CALLBACK.with(|log| {
         *log.borrow_mut() = &callback as *const _ as *mut c_void;
     });
 
-    unsafe { emscripten_set_main_loop(wrapper::<F>, 0, 1); }
+    unsafe {
+        emscripten_set_main_loop(wrapper::<F>, 0, 1);
+    }
 
-    unsafe extern "C" fn wrapper<F>() where F: FnMut() {
+    unsafe extern "C" fn wrapper<F>()
+    where
+        F: FnMut(),
+    {
         MAIN_LOOP_CALLBACK.with(|z| {
             let closure = *z.borrow_mut() as *mut F;
             (*closure)();
@@ -41,20 +49,16 @@ pub fn set_main_loop_callback<F>(callback: F) where F: FnMut() {
 pub struct EmscriptenDriver;
 
 impl<
-    C: CellState,
-    E: EntityState<C>,
-    M: MutEntityState,
-    CA: CellAction<C>,
-    EA: EntityAction<C, E>,
-    U: Universe<C, E, M>,
-    N: Engine<C, E, M, CA, EA, U>,
-> Driver<C, E, M, CA, EA, U, N> for EmscriptenDriver {
-    fn init(
-        self,
-        mut universe: U,
-        mut engine: N,
-        middleware: &mut [Box<Middleware<C, E, M, CA, EA, U, N>>]
-    ) {
+        C: CellState,
+        E: EntityState<C>,
+        M: MutEntityState,
+        CA: CellAction<C>,
+        EA: EntityAction<C, E>,
+        U: Universe<C, E, M>,
+        N: Engine<C, E, M, CA, EA, U>,
+    > Driver<C, E, M, CA, EA, U, N> for EmscriptenDriver
+{
+    fn init(self, mut universe: U, mut engine: N, mut middleware: Vec<Box<Middleware<C, E, M, CA, EA, U, N>>>) {
         let closure = || {
             for m in middleware.iter_mut() {
                 m.before_render(&mut universe);
@@ -76,25 +80,21 @@ impl<
 /// an internal buffer containing that data.  Once all of the data has been calculated, it calls the provided
 /// `canvas_render` function with a pointer to that internal pixeldata buffer in rgba format (the same format
 /// as is accepted by HTML Canvases).
-pub struct CanvasRenderer<
-    C: CellState,
-    E: EntityState<C>,
-    M: MutEntityState,
-    I: Ord + Copy,
-> {
+pub struct CanvasRenderer<C: CellState, E: EntityState<C>, M: MutEntityState, I: Ord + Copy> {
     pixbuf: Vec<u8>,
     get_color: ColorCalculator<C, E, M, I>,
-    canvas_render: unsafe extern fn(ptr: *const u8),
+    canvas_render: fn(colors: &[u8]),
 }
 
 impl<
-    C: CellState,
-    E: EntityState<C>,
-    M: MutEntityState,
-    CA: CellAction<C>,
-    EA: EntityAction<C, E>,
-    N: Engine<C, E, M, CA, EA, Universe2D<C, E, M>>,
-> Middleware<C, E, M, CA, EA, Universe2D<C, E, M>, N> for CanvasRenderer<C, E, M, usize> {
+        C: CellState,
+        E: EntityState<C>,
+        M: MutEntityState,
+        CA: CellAction<C>,
+        EA: EntityAction<C, E>,
+        N: Engine<C, E, M, CA, EA, Universe2D<C, E, M>>,
+    > Middleware<C, E, M, CA, EA, Universe2D<C, E, M>, N> for CanvasRenderer<C, E, M, usize>
+{
     fn after_render(&mut self, universe: &mut Universe2D<C, E, M>) {
         // check if the universe size has changed since the last render and, if it has, re-size our pixbuf
         let universe_len = universe.cells.len();
@@ -111,33 +111,22 @@ impl<
             unsafe {
                 ptr::write(
                     dst_ptr,
-                    mem::transmute::<[u8; 4], _>(
-                        (self.get_color)(
-                            &universe.cells.get_unchecked(universe_index),
-                            entities,
-                            &universe.entities
-                        )
-                    )
+                    mem::transmute::<[u8; 4], _>((self.get_color)(
+                        &universe.cells.get_unchecked(universe_index),
+                        entities,
+                        &universe.entities,
+                    )),
                 )
             };
         }
 
         // pass a pointer to our internal buffer to the canvas render function
-        unsafe { (self.canvas_render)(self.pixbuf.as_ptr()) }
+        unsafe { (self.canvas_render)(&self.pixbuf) }
     }
 }
 
-impl<
-    C: CellState,
-    E: EntityState<C>,
-    M: MutEntityState,
-    I: Ord + Copy,
-> CanvasRenderer<C, E, M, I> {
-    pub fn new(
-        universe_size: usize,
-        get_color: ColorCalculator<C, E, M, I>,
-        canvas_render: unsafe extern fn(ptr: *const u8)
-    ) -> Self {
+impl<C: CellState, E: EntityState<C>, M: MutEntityState, I: Ord + Copy> CanvasRenderer<C, E, M, I> {
+    pub fn new(universe_size: usize, get_color: ColorCalculator<C, E, M, I>, canvas_render: fn(colors: &[u8])) -> Self {
         CanvasRenderer {
             pixbuf: vec![255u8; universe_size * universe_size * 4],
             get_color,
@@ -154,7 +143,7 @@ pub enum KeyPress {
 
 /// Represents an action that the user can take in the web UI.
 pub enum UserEvent {
-    CanvasClick{ x: u32, y: u32 },
+    CanvasClick { x: u32, y: u32 },
     KeyPress,
     Custom(Vec<u8>),
 }

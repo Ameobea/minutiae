@@ -5,9 +5,12 @@
 use std::clone::Clone;
 use std::fmt::{self, Debug, Formatter};
 use std::marker::PhantomData;
+use std::mem;
 
+use rand::Rng;
+use rand_pcg::Pcg32;
 #[cfg(feature = "serde")]
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[allow(unused_imports)]
@@ -18,10 +21,10 @@ use cell::CellState;
 /// The core state of an entity that defines its behavior.  This stat is modified by the engine and is visible by not
 /// writable by the entity itself.
 #[cfg(feature = "serde")]
-pub trait EntityState<C: CellState>:Clone + Serialize + for<'d> Deserialize<'d> {}
+pub trait EntityState<C: CellState>: Clone + Serialize + for<'d> Deserialize<'d> {}
 
 #[cfg(not(feature = "serde"))]
-pub trait EntityState<C: CellState>:Clone {}
+pub trait EntityState<C: CellState>: Clone {}
 
 /// Entity state that is private to the entity.  It is not visible to other entities or to the engine but is mutable
 /// during the entity driver and can be used to hold things such as PRNGs etc.
@@ -40,40 +43,56 @@ pub struct Entity<C: CellState, S: EntityState<C>, M: MutEntityState> {
     phantom: PhantomData<C>,
 }
 
-impl<C: CellState, E: EntityState<C>, M: MutEntityState> Debug for Entity<C, E, M> where E:Debug {
+impl<C: CellState, E: EntityState<C>, M: MutEntityState> Debug for Entity<C, E, M>
+where
+    E: Debug,
+{
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
         write!(formatter, "Entity {{state: {:?} }}", self.state)
     }
 }
 
-impl<
-    C: CellState,
-    E: EntityState<C>,
-    M: MutEntityState
-> Clone for Entity<C, E, M> where E:Clone, M:Clone {
+#[thread_local]
+static mut RNG: Pcg32 = unsafe { mem::transmute(0u128) };
+
+pub fn rng() -> &'static mut Pcg32 {
+    unsafe { &mut RNG }
+}
+
+fn uuidv4() -> Uuid {
+    let entropy: (u64, u64) = rng().gen();
+    unsafe { mem::transmute(entropy) }
+}
+
+impl<C: CellState, E: EntityState<C>, M: MutEntityState> Clone for Entity<C, E, M>
+where
+    E: Clone,
+    M: Clone,
+{
     fn clone(&self) -> Self {
         Entity {
             state: self.state.clone(),
             mut_state: self.mut_state.clone(),
-            uuid: Uuid::new_v4(),
+            uuid: uuidv4(),
             phantom: PhantomData,
         }
     }
 }
 
-impl<
-    C: CellState,
-    E: EntityState<C>,
-    M: MutEntityState,
-> Entity<C, E, M> {
+impl<C: CellState, E: EntityState<C>, M: MutEntityState> Entity<C, E, M> {
     pub fn new(state: E, mut_state: M) -> Entity<C, E, M> {
         Entity {
             state: state,
             mut_state: mut_state,
-            uuid: Uuid::new_v4(),
+            uuid: uuidv4(),
             phantom: PhantomData,
         }
     }
 }
 
-unsafe impl<C: CellState, E: EntityState<C>, M: MutEntityState> Send for Entity<C, E, M> where C:Send, E:Send {}
+unsafe impl<C: CellState, E: EntityState<C>, M: MutEntityState> Send for Entity<C, E, M>
+where
+    C: Send,
+    E: Send,
+{
+}
