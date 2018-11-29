@@ -15,14 +15,12 @@
     const_transmute
 )]
 
-extern crate num_cpus;
-extern crate test;
-extern crate uuid;
-#[macro_use]
-extern crate lazy_static;
 extern crate futures;
+extern crate num_cpus;
 extern crate rand;
 extern crate rand_pcg;
+extern crate test;
+extern crate uuid;
 
 #[cfg(any(feature = "serde", feature = "client"))]
 extern crate serde;
@@ -64,8 +62,7 @@ pub mod prelude {
     pub use action::{Action, CellAction, EntityAction, OwnedAction, SelfAction};
     pub use cell::{Cell, CellState};
     pub use container::EntityContainer;
-    pub use driver::middleware::Middleware;
-    pub use driver::Driver;
+    pub use driver::{middleware::Middleware, Driver};
     pub use engine::Engine;
     pub use entity::{Entity, EntityState, MutEntityState};
     pub use generator::Generator;

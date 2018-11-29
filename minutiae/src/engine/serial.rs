@@ -1,7 +1,7 @@
 //! A simulation engine that simulates all changes to the universe sequentially.  This is the most simple
 //! engine but doens't take advantage of any possible benifits from things like multithreading.
 
-use universe::{CellContainer, ContiguousUniverse, Universe};
+use universe::{Universe};
 use cell::CellState;
 use entity::{Entity, EntityState, MutEntityState};
 use action::{Action, OwnedAction, CellAction, SelfAction, EntityAction};
@@ -18,26 +18,24 @@ pub trait SerialEngine<
     CA: CellAction<C>,
     EA: EntityAction<C, E>,
     EI: EntityIterator<C, E, M>,
-    I: Ord + Copy + 'static,
-    CC: CellContainer<C, I>,
-    U: Universe<C, E, M, Coord=I> + ContiguousUniverse<C, E, M, I, CC>,
+    U: Universe<C, E, M>,
 > {
     fn iter_entities(&self, &U) -> EI;
 
     fn exec_actions(
         &self,
         &mut U,
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>]
+        &[OwnedAction<C, E, CA, EA>],
+        &[OwnedAction<C, E, CA, EA>],
+        &[OwnedAction<C, E, CA, EA>]
     );
 
     fn drive_entity(
         &mut self,
-        universe_index: I,
+        universe_index: usize,
         entity: &Entity<C, E, M>,
         universe: &U,
-        cell_action_executor: &mut FnMut(CA, I),
+        cell_action_executor: &mut FnMut(CA, usize),
         self_action_executor: &mut FnMut(SelfAction<C, E, EA>),
         entity_action_executor: &mut FnMut(EA, usize, Uuid)
     );
@@ -50,20 +48,18 @@ impl<
     CA: CellAction<C>,
     EA: EntityAction<C, E>,
     EI: EntityIterator<C, E, M>,
-    I: Ord + Copy + 'static,
-    CC: CellContainer<C, I>,
-    U: Universe<C, E, M, Coord=I> + ContiguousUniverse<C, E, M, I, CC>,
-> Engine<C, E, M, CA, EA, U> for Box<SerialEngine<C, E, M, CA, EA, EI, I, CC, U>> {
+    U: Universe<C, E, M>,
+> Engine<C, E, M, CA, EA, U> for Box<SerialEngine<C, E, M, CA, EA, EI, U>> {
     // #[inline(never)]
     fn step<'a>(&'a mut self, mut universe: &'a mut U) {
         // iterate over the universe's entities one at a time, passing their requested actions into the engine's core
         // and applying the results immediately based on its rules
         // TODO: Implement preallocation and preallocation metrics
-        let mut cell_action_buf: Vec<OwnedAction<C, E, CA, EA, I>>   = Vec::new();
-        let mut self_action_buf: Vec<OwnedAction<C, E, CA, EA, I>>   = Vec::new();
-        let mut entity_action_buf: Vec<OwnedAction<C, E, CA, EA, I>> = Vec::new();
+        let mut cell_action_buf: Vec<OwnedAction<C, E, CA, EA>>   = Vec::new();
+        let mut self_action_buf: Vec<OwnedAction<C, E, CA, EA>>   = Vec::new();
+        let mut entity_action_buf: Vec<OwnedAction<C, E, CA, EA>> = Vec::new();
         for (entity_ref, entity_index, universe_index) in universe.get_entities().iter() {
-            let mut cell_action_executor = |cell_action: CA, universe_index: I| {
+            let mut cell_action_executor = |cell_action: CA, universe_index: usize| {
                 let owned_action = OwnedAction {
                     source_entity_index: entity_index,
                     source_uuid: entity_ref.uuid,

@@ -40,7 +40,7 @@ pub trait Tys : Clone + Copy + Send {
     type CA: CellAction<Self::C>;
     type EA: EntityAction<Self::C, Self::E>;
     type I: Ord + Copy;
-    type U: Universe<Self::C, Self::E, Self::M, Coord=Self::I>;
+    type U: Universe<Self::C, Self::E, Self::M>;
     type V: Event<Self> = ();
 
     #[cfg(not(any(feature = "thin", feature = "hybrid", feature = "fat")))]

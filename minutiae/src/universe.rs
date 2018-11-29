@@ -1,7 +1,8 @@
-//! Declares the universe in which all parts of the system reside.  ItThe universe is represented by a square two-dimensional
-//! array of cells.  The universe has a set view distance which determines what range cells and entities have information
-//! about their neighbors; a view distance of 0 means they only have knowledge of their own state, a view distance of
-//! 1 means that they have knowledge of all neighbors touching them (including diagonals), etc.
+//! Declares the universe in which all parts of the system reside.  ItThe universe is represented by
+//! a square two-dimensional array of cells.  The universe has a set view distance which determines
+//! what range cells and entities have information about their neighbors; a view distance of 0 means
+//! they only have knowledge of their own state, a view distance of 1 means that they have knowledge
+//! of all neighbors touching them (including diagonals), etc.
 
 use std::borrow::Cow;
 
@@ -14,36 +15,23 @@ use entity::{EntityState, MutEntityState};
 use generator::Generator;
 
 pub trait Universe<C: CellState, E: EntityState<C>, M: MutEntityState>: Default {
-    /// The data type that can be used to index the cells of the universe.  For a 2D universe, it would be `usize` or `isize`.
-    /// For a 3D universe, it would be `(usize, usize, usize)` or `(isize, isize, isize)` or perhaps `Point3D`.
-    type Coord: Ord + Copy;
+    fn get_cell(&self, coord: usize) -> Option<Cow<Cell<C>>>;
 
-    fn get_cell(&self, coord: Self::Coord) -> Option<Cow<Cell<C>>>;
+    unsafe fn get_cell_unchecked(&self, coord: usize) -> Cow<Cell<C>>;
 
-    unsafe fn get_cell_unchecked(&self, coord: Self::Coord) -> Cow<Cell<C>>;
+    fn set_cell(&mut self, coord: usize, new_state: C);
 
-    fn set_cell(&mut self, coord: Self::Coord, new_state: C);
+    fn set_cell_unchecked(&mut self, coord: usize, new_state: C);
 
-    fn set_cell_unchecked(&mut self, coord: Self::Coord, new_state: C);
+    fn get_entities<'a>(&'a self) -> &'a EntityContainer<C, E, M>;
 
-    fn get_entities<'a>(&'a self) -> &'a EntityContainer<C, E, M, Self::Coord>;
+    fn get_entities_mut<'a>(&'a mut self) -> &'a mut EntityContainer<C, E, M>;
 
-    fn get_entities_mut<'a>(&'a mut self) -> &'a mut EntityContainer<C, E, M, Self::Coord>;
+    fn get_cells<'a>(&'a self) -> &'a [Cell<C>];
 
-    // fn get_entities_at(&self, coord: Self::Coord) -> &[usize] {
-    //     self.get_entities().get_entities_at(coord.into())
-    // }
+    fn get_cells_mut<'a>(&'a mut self) -> &'a mut [Cell<C>];
 
     fn empty() -> Self;
-}
-
-pub trait CellContainer<C: CellState + 'static, I: 'static> {
-    fn get_cell_direct(&self, index: I) -> Cell<C>;
-}
-
-/// Represents universes that store their cells as a flat buffer that can be accessed as a vector.
-pub trait ContiguousUniverse<C: CellState + 'static, E: EntityState<C>, M: MutEntityState, I: Ord + 'static, CC: CellContainer<C, I>> {
-    fn get_cell_container<'a>(&'a self) -> &'a CC;
 }
 
 #[derive(Clone)]
@@ -53,9 +41,7 @@ pub struct Universe2DConf {
 }
 
 impl Default for Universe2DConf {
-    fn default() -> Universe2DConf {
-        Universe2DConf { size: 800 }
-    }
+    fn default() -> Universe2DConf { Universe2DConf { size: 800 } }
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -64,7 +50,7 @@ impl Default for Universe2DConf {
 pub struct Universe2D<C: CellState, E: EntityState<C>, M: MutEntityState> {
     pub conf: Universe2DConf,
     pub cells: Vec<Cell<C>>,
-    pub entities: EntityContainer<C, E, M, usize>,
+    pub entities: EntityContainer<C, E, M>,
 }
 
 impl<C: CellState, E: EntityState<C>, M: MutEntityState> Universe2D<C, E, M> {
@@ -77,7 +63,8 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> Universe2D<C, E, M> {
             entities: EntityContainer::new(),
         };
 
-        // use the generator to generate an initial layout of cells and entities with which to populate the world
+        // use the generator to generate an initial layout of cells and entities with which to
+        // populate the world
         let (cells, entities) = gen.gen(&universe.conf);
 
         universe.cells = cells;
@@ -99,88 +86,42 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> Universe2D<C, E, M> {
         }
     }
 
-    pub fn get_conf<'a>(&'a self) -> &'a Universe2DConf {
-        &self.conf
-    }
+    pub fn get_conf<'a>(&'a self) -> &'a Universe2DConf { &self.conf }
 
-    pub fn get_size(&self) -> usize {
-        self.conf.size as usize
-    }
+    pub fn get_size(&self) -> usize { self.conf.size as usize }
 }
 
 impl<C: CellState, E: EntityState<C>, M: MutEntityState> Default for Universe2D<C, E, M> {
-    fn default() -> Self {
-        Universe2D::uninitialized()
-    }
+    fn default() -> Self { Universe2D::uninitialized() }
 }
 
 impl<C: CellState, E: EntityState<C>, M: MutEntityState> Universe<C, E, M> for Universe2D<C, E, M> {
-    type Coord = usize;
-
-    fn get_cell(&self, coord: Self::Coord) -> Option<Cow<Cell<C>>> {
+    fn get_cell(&self, coord: usize) -> Option<Cow<Cell<C>>> {
         self.cells.get(coord).map(|c| Cow::Borrowed(c))
     }
 
-    unsafe fn get_cell_unchecked(&self, coord: Self::Coord) -> Cow<Cell<C>> {
+    unsafe fn get_cell_unchecked(&self, coord: usize) -> Cow<Cell<C>> {
         Cow::Borrowed(self.cells.get_unchecked(coord))
     }
 
-    fn set_cell(&mut self, coord: Self::Coord, new_state: C) {
+    fn set_cell(&mut self, coord: usize, new_state: C) {
         match self.cells.get_mut(coord) {
             Some(&mut Cell { ref mut state }) => *state = new_state,
             None => (),
         }
     }
 
-    fn set_cell_unchecked(&mut self, coord: Self::Coord, new_state: C) {
+    fn set_cell_unchecked(&mut self, coord: usize, new_state: C) {
         self.cells[coord].state = new_state;
     }
 
-    fn get_entities<'a>(&'a self) -> &'a EntityContainer<C, E, M, usize> {
-        &self.entities
-    }
+    fn get_entities<'a>(&'a self) -> &'a EntityContainer<C, E, M> { &self.entities }
 
-    fn get_entities_mut<'a>(&'a mut self) -> &'a mut EntityContainer<C, E, M, usize> {
-        &mut self.entities
-    }
+    fn get_entities_mut<'a>(&'a mut self) -> &'a mut EntityContainer<C, E, M> { &mut self.entities }
 
-    fn empty() -> Self {
-        Self::uninitialized()
-    }
-}
+    fn get_cells<'a>(&'a self) -> &'a [Cell<C>] { &self.cells }
 
-impl<C: CellState + 'static> CellContainer<C, usize> for Vec<Cell<C>> {
-    fn get_cell_direct(&self, index: usize) -> Cell<C> {
-        self[index].clone()
-    }
-}
+    fn get_cells_mut<'a>(&'a mut self) -> &'a mut [Cell<C>] { &mut self.cells }
 
-impl<C: CellState + 'static, E: EntityState<C>, M: MutEntityState> CellContainer<C, usize> for Universe2D<C, E, M> {
-    #[inline(always)]
-    fn get_cell_direct(&self, index: usize) -> Cell<C> {
-        self.cells[index].clone()
-    }
-}
-
-impl<C: CellState + 'static, E: EntityState<C>, M: MutEntityState> ContiguousUniverse<C, E, M, usize, Self> for Universe2D<C, E, M> {
-    #[inline(always)]
-    fn get_cell_container<'a>(&'a self) -> &'a Self {
-        self
-    }
-}
-
-pub trait Into2DIndex {
-    fn into_2d_index(self, universe_size: usize) -> usize;
-
-    fn from_2d_index(universe_size: usize, universe_index: usize) -> Self;
-}
-
-impl Into2DIndex for usize {
-    fn into_2d_index(self, _: usize) -> usize {
-        self
-    }
-
-    fn from_2d_index(_: usize, universe_index: usize) -> Self {
-        universe_index
-    }
+    fn empty() -> Self { Self::uninitialized() }
 }

@@ -1,10 +1,12 @@
 // Taken from https://blog.fazibear.me/definitive-guide-to-rust-sdl-2-and-emscripten-93d707b22bbb
 // Which took it from https://github.com/Gigoteur/PX8/blob/master/src/px8/emscripten.rs
 
-use std::cell::RefCell;
-use std::mem;
-use std::os::raw::{c_float, c_int, c_void};
-use std::ptr::{self, null_mut};
+use std::{
+    cell::RefCell,
+    mem,
+    os::raw::{c_float, c_int, c_void},
+    ptr::{self, null_mut},
+};
 
 use prelude::*;
 use universe::Universe2D;
@@ -14,7 +16,11 @@ use util::ColorCalculator;
 type em_callback_func = unsafe extern "C" fn();
 
 extern "C" {
-    pub fn emscripten_set_main_loop(func: em_callback_func, fps: c_int, simulate_infinite_loop: c_int);
+    pub fn emscripten_set_main_loop(
+        func: em_callback_func,
+        fps: c_int,
+        simulate_infinite_loop: c_int,
+    );
     pub fn emscripten_cancel_main_loop();
     pub fn emscripten_get_now() -> c_float;
 }
@@ -44,8 +50,8 @@ where
     }
 }
 
-/// Driver that integrates with the Emscripten browser event loop API to have the simulation loop automatically managed
-/// by the browser.
+/// Driver that integrates with the Emscripten browser event loop API to have the simulation loop
+/// automatically managed by the browser.
 pub struct EmscriptenDriver;
 
 impl<
@@ -58,7 +64,12 @@ impl<
         N: Engine<C, E, M, CA, EA, U>,
     > Driver<C, E, M, CA, EA, U, N> for EmscriptenDriver
 {
-    fn init(self, mut universe: U, mut engine: N, mut middleware: Vec<Box<Middleware<C, E, M, CA, EA, U, N>>>) {
+    fn init(
+        self,
+        mut universe: U,
+        mut engine: N,
+        mut middleware: Vec<Box<Middleware<C, E, M, CA, EA, U, N>>>,
+    ) {
         let closure = || {
             for m in middleware.iter_mut() {
                 m.before_render(&mut universe);
@@ -76,13 +87,13 @@ impl<
     }
 }
 
-/// Middleware that caculates the color of each pixel in the universe using a provided function and maintains
-/// an internal buffer containing that data.  Once all of the data has been calculated, it calls the provided
-/// `canvas_render` function with a pointer to that internal pixeldata buffer in rgba format (the same format
-/// as is accepted by HTML Canvases).
-pub struct CanvasRenderer<C: CellState, E: EntityState<C>, M: MutEntityState, I: Ord + Copy> {
+/// Middleware that caculates the color of each pixel in the universe using a provided function and
+/// maintains an internal buffer containing that data.  Once all of the data has been calculated, it
+/// calls the provided `canvas_render` function with a pointer to that internal pixeldata buffer in
+/// rgba format (the same format as is accepted by HTML Canvases).
+pub struct CanvasRenderer<C: CellState, E: EntityState<C>, M: MutEntityState> {
     pixbuf: Vec<u8>,
-    get_color: ColorCalculator<C, E, M, I>,
+    get_color: ColorCalculator<C, E, M>,
     canvas_render: fn(colors: &[u8]),
 }
 
@@ -93,10 +104,11 @@ impl<
         CA: CellAction<C>,
         EA: EntityAction<C, E>,
         N: Engine<C, E, M, CA, EA, Universe2D<C, E, M>>,
-    > Middleware<C, E, M, CA, EA, Universe2D<C, E, M>, N> for CanvasRenderer<C, E, M, usize>
+    > Middleware<C, E, M, CA, EA, Universe2D<C, E, M>, N> for CanvasRenderer<C, E, M>
 {
     fn after_render(&mut self, universe: &mut Universe2D<C, E, M>) {
-        // check if the universe size has changed since the last render and, if it has, re-size our pixbuf
+        // check if the universe size has changed since the last render and, if it has, re-size our
+        // pixbuf
         let universe_len = universe.cells.len();
         let expected_pixbuf_size = universe_len * 4;
         if expected_pixbuf_size != self.pixbuf.len() && expected_pixbuf_size != 0 {
@@ -107,7 +119,8 @@ impl<
         for universe_index in 0..universe.cells.len() {
             let entities = universe.entities.get_entities_at(universe_index);
 
-            let dst_ptr = unsafe { self.pixbuf.as_ptr().offset(universe_index as isize * 4) } as *mut u32;
+            let dst_ptr =
+                unsafe { self.pixbuf.as_ptr().offset(universe_index as isize * 4) } as *mut u32;
             unsafe {
                 ptr::write(
                     dst_ptr,
@@ -125,8 +138,12 @@ impl<
     }
 }
 
-impl<C: CellState, E: EntityState<C>, M: MutEntityState, I: Ord + Copy> CanvasRenderer<C, E, M, I> {
-    pub fn new(universe_size: usize, get_color: ColorCalculator<C, E, M, I>, canvas_render: fn(colors: &[u8])) -> Self {
+impl<C: CellState, E: EntityState<C>, M: MutEntityState> CanvasRenderer<C, E, M> {
+    pub fn new(
+        universe_size: usize,
+        get_color: ColorCalculator<C, E, M>,
+        canvas_render: fn(colors: &[u8]),
+    ) -> Self {
         CanvasRenderer {
             pixbuf: vec![255u8; universe_size * universe_size * 4],
             get_color,

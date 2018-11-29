@@ -1,28 +1,33 @@
-//! Engine that makes use of multiple worker threads to enable entity drivers to be evaluated concurrently.
+//! Engine that makes use of multiple worker threads to enable entity drivers to be evaluated
+//! concurrently.
 
-use std::fmt::Debug;
-use std::marker::PhantomData;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::sync::mpsc::{sync_channel, SyncSender, Receiver};
-use std::thread;
+use std::{
+    fmt::Debug,
+    marker::PhantomData,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc::{sync_channel, Receiver, SyncSender},
+        Arc,
+    },
+    thread,
+};
 
 use num_cpus;
 use uuid::Uuid;
 
-use universe::{CellContainer, ContiguousUniverse, Universe};
+use action::{Action, CellAction, EntityAction, OwnedAction, SelfAction};
 use cell::{Cell, CellState};
-use entity::{Entity, EntityState, MutEntityState};
-use action::{Action, CellAction, SelfAction, EntityAction, OwnedAction};
-use engine::Engine;
 use container::{EntityContainer, EntitySlot};
+use engine::Engine;
+use entity::{Entity, EntityState, MutEntityState};
+use universe::Universe;
 
-type ActionBufs<C, E, CA, EA, I> = (
-    Vec<OwnedAction<C, E, CA, EA, I>>,
+type ActionBufs<C, E, CA, EA> = (
+    Vec<OwnedAction<C, E, CA, EA>>,
     usize,
-    Vec<OwnedAction<C, E, CA, EA, I>>,
+    Vec<OwnedAction<C, E, CA, EA>>,
     usize,
-    Vec<OwnedAction<C, E, CA, EA, I>>,
+    Vec<OwnedAction<C, E, CA, EA>>,
     usize,
 );
 
@@ -32,83 +37,79 @@ pub struct ParallelEngine<
     M: MutEntityState + Send + 'static,
     CA: CellAction<C> + Send + 'static,
     EA: EntityAction<C, E> + Send + 'static,
-    I: Ord + Copy + Send + 'static,
-    CC: CellContainer<C, I>,
-    U: Universe<C, E, M, Coord=I>,
+    U: Universe<C, E, M>,
     F: Fn(
         &mut U,
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>]
+        &[OwnedAction<C, E, CA, EA>],
+        &[OwnedAction<C, E, CA, EA>],
+        &[OwnedAction<C, E, CA, EA>],
     ),
 > {
     worker_count: usize,
     // Uses a function trait out of necessity since we have need to do that for the hybrid server.
     exec_actions: F,
-    action_buf_rx: Receiver<ActionBufs<C, E, CA, EA, I>>,
-    wakeup_senders: Vec<SyncSender<WakeupMessage<C, E, M, CA, EA, I, CC>>>,
+    action_buf_rx: Receiver<ActionBufs<C, E, CA, EA>>,
+    wakeup_senders: Vec<SyncSender<WakeupMessage<C, E, M, CA, EA>>>,
     index: Arc<AtomicUsize>,
-    recycled_action_bufs: Vec<ActionBufs<C, E, CA, EA, I>>,
-    action_buf_buf: Vec<ActionBufs<C, E, CA, EA, I>>,
+    recycled_action_bufs: Vec<ActionBufs<C, E, CA, EA>>,
+    action_buf_buf: Vec<ActionBufs<C, E, CA, EA>>,
     __phantom_u: PhantomData<U>,
 }
 
-/// Message sent over the wakeup channels containing recycled action buffers and the number of entities that need to be processed
+/// Message sent over the wakeup channels containing recycled action buffers and the number of
+/// entities that need to be processed
 pub struct WakeupMessage<
     C: CellState + Send + 'static,
     E: EntityState<C> + Send + 'static,
     M: MutEntityState + Send + 'static,
     CA: CellAction<C> + Send + 'static,
     EA: EntityAction<C, E> + Send + 'static,
-    I: Ord + Copy + Send + 'static,
-    CC: CellContainer<C, I>,
 > {
-    cell_action_buf: Vec<OwnedAction<C, E, CA, EA, I>>,
-    self_action_buf: Vec<OwnedAction<C, E, CA, EA, I>>,
-    entity_action_buf: Vec<OwnedAction<C, E, CA, EA, I>>,
+    cell_action_buf: Vec<OwnedAction<C, E, CA, EA>>,
+    self_action_buf: Vec<OwnedAction<C, E, CA, EA>>,
+    entity_action_buf: Vec<OwnedAction<C, E, CA, EA>>,
     entity_count: usize,
-    cells_ptr: *const CC,
-    entities_ptr: *const EntityContainer<C, E, M, I>,
+    cells_ptr: *const Cell<C>,
+    entities_ptr: *const EntityContainer<C, E, M>,
     index: Arc<AtomicUsize>,
 }
 
 unsafe impl<
-    C: CellState + Send + 'static,
-    E: EntityState<C> + Send + 'static,
-    M: MutEntityState + Send + 'static,
-    CA: CellAction<C> + Send + 'static,
-    EA: EntityAction<C, E> + Send + 'static,
-    I: Ord + Copy + Send + 'static,
-    CC: CellContainer<C, I>
-> Send for WakeupMessage<C, E, M, CA, EA, I, CC> {}
+        C: CellState + Send + 'static,
+        E: EntityState<C> + Send + 'static,
+        M: MutEntityState + Send + 'static,
+        CA: CellAction<C> + Send + 'static,
+        EA: EntityAction<C, E> + Send + 'static,
+    > Send for WakeupMessage<C, E, M, CA, EA>
+{
+}
 
 impl<
-    C: CellState + Send,
-    E: EntityState<C> + Send,
-    M: MutEntityState + Send,
-    CA: CellAction<C> + Send,
-    EA: EntityAction<C, E> + Send,
-    I: Ord + Send + Copy + 'static,
-    CC: CellContainer<C, I> + Send + 'static,
-    U: Universe<C, E, M, Coord=I>,
-    F: Fn(
-        &mut U,
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>]
-    )
-> ParallelEngine<C, E, M, CA, EA, I, CC, U, F> {
+        C: CellState + Send,
+        E: EntityState<C> + Send,
+        M: MutEntityState + Send,
+        CA: CellAction<C> + Send,
+        EA: EntityAction<C, E> + Send,
+        U: Universe<C, E, M>,
+        F: Fn(
+            &mut U,
+            &[OwnedAction<C, E, CA, EA>],
+            &[OwnedAction<C, E, CA, EA>],
+            &[OwnedAction<C, E, CA, EA>],
+        ),
+    > ParallelEngine<C, E, M, CA, EA, U, F>
+{
     pub fn new(
         exec_actions: F,
         entity_driver: fn(
-            universe_index: I,
+            universe_index: usize,
             entity: &Entity<C, E, M>,
-            entities: &EntityContainer<C, E, M, I>,
+            entities: &EntityContainer<C, E, M>,
             cells: &[Cell<C>],
-            cell_action_executor: &mut FnMut(CA, I),
+            cell_action_executor: &mut FnMut(CA, usize),
             self_action_executor: &mut FnMut(SelfAction<C, E, EA>),
-            entity_action_executor: &mut FnMut(EA, usize, Uuid)
-        )
+            entity_action_executor: &mut FnMut(EA, usize, Uuid),
+        ),
     ) -> Self {
         let cpu_count = num_cpus::get();
         // create a container to hold the senders used to wake up the worker threads
@@ -116,7 +117,8 @@ impl<
         // create a channel over which to receive action buffers from the worker threads
         let (action_buf_tx, action_buf_rx) = sync_channel(cpu_count);
 
-        // spawn worker threads that block waiting for a message to be received indicating that they should start pulling and processing work
+        // spawn worker threads that block waiting for a message to be received indicating that they
+        // should start pulling and processing work
         for _ in 0..cpu_count {
             let (wakeup_tx, wakeup_rx) = sync_channel(0);
             wakeup_senders.push(wakeup_tx);
@@ -128,7 +130,8 @@ impl<
                 let mut self_action_count;
                 let mut entity_action_count;
 
-                // keep blocking and waiting for a wakeup message, then start processing work until it's all completed
+                // keep blocking and waiting for a wakeup message, then start processing work until
+                // it's all completed
                 loop {
                     // reset action counts
                     cell_action_count = 0;
@@ -136,14 +139,21 @@ impl<
                     entity_action_count = 0;
 
                     let WakeupMessage {
-                        mut cell_action_buf, mut self_action_buf, mut entity_action_buf, entity_count, cells_ptr, entities_ptr, index
-                    } = wakeup_rx.recv()
-                        .expect("Error while receiving work message over channel in worker thread; sender likely gone away!");
+                        mut cell_action_buf,
+                        mut self_action_buf,
+                        mut entity_action_buf,
+                        entity_count,
+                        cells_ptr,
+                        entities_ptr,
+                        index,
+                    } = wakeup_rx.recv().expect(
+                        "Error while receiving work message over channel in worker thread; sender \
+                         likely gone away!",
+                    );
 
                     // convert the current cell and entity pointers into references
-                    let entities: &EntityContainer<C, E, M, I> = unsafe {
-                        &*(entities_ptr as *const EntityContainer<C, E, M, I>)
-                    };
+                    let entities: &EntityContainer<C, E, M> =
+                        unsafe { &*(entities_ptr as *const EntityContainer<C, E, M>) };
                     // TODO TODO TODO ------------------- THIS IS BAD \/ \/ \/ \/ \/ \/ \/
                     let cells: &Vec<Cell<C>> = unsafe { &*(cells_ptr as *const Vec<Cell<C>>) };
 
@@ -152,41 +162,58 @@ impl<
                         entity_index = index.fetch_add(1, Ordering::Relaxed);
                         if entity_index < entity_count {
                             match entities.entities[entity_index] {
-                                EntitySlot::Occupied { entity: ref entity_ref, ref universe_index } => {
-                                    let mut cell_action_executor = |cell_action: CA, universe_index: I| {
-                                        let owned_action = OwnedAction {
-                                            source_entity_index: entity_index,
-                                            source_uuid: entity_ref.uuid,
-                                            action: Action::CellAction {
-                                                universe_index,
-                                                action: cell_action,
-                                            },
+                                EntitySlot::Occupied {
+                                    entity: ref entity_ref,
+                                    ref universe_index,
+                                } => {
+                                    let mut cell_action_executor =
+                                        |cell_action: CA, universe_index: usize| {
+                                            let owned_action = OwnedAction {
+                                                source_entity_index: entity_index,
+                                                source_uuid: entity_ref.uuid,
+                                                action: Action::CellAction {
+                                                    universe_index,
+                                                    action: cell_action,
+                                                },
+                                            };
+
+                                            if cell_action_buf.len() <= cell_action_count {
+                                                cell_action_buf.push(owned_action);
+                                            } else {
+                                                debug_assert!(
+                                                    cell_action_buf.len() > cell_action_count
+                                                );
+                                                unsafe {
+                                                    *cell_action_buf
+                                                        .get_unchecked_mut(cell_action_count) =
+                                                        owned_action
+                                                };
+                                            }
+                                            cell_action_count += 1;
                                         };
 
-                                        if cell_action_buf.len() <= cell_action_count {
-                                            cell_action_buf.push(owned_action);
-                                        } else {
-                                            debug_assert!(cell_action_buf.len() > cell_action_count);
-                                            unsafe { *cell_action_buf.get_unchecked_mut(cell_action_count) = owned_action };
-                                        }
-                                        cell_action_count += 1;
-                                    };
+                                    let mut self_action_executor =
+                                        |self_action: SelfAction<C, E, EA>| {
+                                            let owned_action = OwnedAction {
+                                                source_entity_index: entity_index,
+                                                source_uuid: entity_ref.uuid,
+                                                action: Action::SelfAction(self_action),
+                                            };
 
-                                    let mut self_action_executor = |self_action: SelfAction<C, E, EA>| {
-                                        let owned_action = OwnedAction {
-                                            source_entity_index: entity_index,
-                                            source_uuid: entity_ref.uuid,
-                                            action: Action::SelfAction(self_action),
+                                            if self_action_buf.len() <= self_action_count {
+                                                self_action_buf.push(owned_action);
+                                            } else {
+                                                debug_assert!(
+                                                    self_action_buf.len() > self_action_count
+                                                );
+                                                unsafe {
+                                                    *self_action_buf
+                                                        .get_unchecked_mut(self_action_count) =
+                                                        owned_action
+                                                };
+                                            }
+                                            self_action_count += 1;
                                         };
-
-                                        if self_action_buf.len() <= self_action_count {
-                                            self_action_buf.push(owned_action);
-                                        } else {
-                                            debug_assert!(self_action_buf.len() > self_action_count);
-                                            unsafe { *self_action_buf.get_unchecked_mut(self_action_count) = owned_action };
-                                        }
-                                        self_action_count += 1;
-                                    };
 
                                     let mut entity_action_executor = |entity_action: EA, target_entity_index: usize, target_uuid: Uuid| {
                                         let owned_action = OwnedAction {
@@ -216,7 +243,7 @@ impl<
                                         cells,
                                         &mut cell_action_executor,
                                         &mut self_action_executor,
-                                        &mut entity_action_executor
+                                        &mut entity_action_executor,
                                     );
                                 },
                                 EntitySlot::Empty(_) => (),
@@ -228,8 +255,16 @@ impl<
                     }
 
                     // push the buffers back to the main thread over the `action_buf_tx`
-                    let msg = (cell_action_buf, cell_action_count, self_action_buf, self_action_count, entity_action_buf, entity_action_count);
-                    action_buf_tx.send(msg)
+                    let msg = (
+                        cell_action_buf,
+                        cell_action_count,
+                        self_action_buf,
+                        self_action_count,
+                        entity_action_buf,
+                        entity_action_count,
+                    );
+                    action_buf_tx
+                        .send(msg)
                         .expect("Unable to send action buffers over `action_buf_tx`!");
                 }
             });
@@ -242,8 +277,9 @@ impl<
             recycled_action_bufs.push(bufs);
         }
 
-        // create vector to hold the results from the worker threads without allocating.  Will always have the same length as the
-        // number of worker threads (currently the number of CPUs)
+        // create vector to hold the results from the worker threads without allocating.  Will
+        // always have the same length as the number of worker threads (currently the number
+        // of CPUs)
         let action_buf_buf = Vec::with_capacity(cpu_count);
 
         ParallelEngine {
@@ -260,24 +296,24 @@ impl<
 }
 
 impl<
-    C: CellState + Send + Debug + 'static,
-    E: EntityState<C> + Send + Debug + 'static,
-    M: MutEntityState + Send + 'static,
-    CA: CellAction<C> + Send + Debug + 'static,
-    EA: EntityAction<C, E> + Send + Debug + 'static,
-    I: Ord + Send + Copy + 'static,
-    CC: CellContainer<C, I>,
-    U: Universe<C, E, M, Coord=I> + ContiguousUniverse<C, E, M, I, CC>,
-    F: Fn(
-        &mut U,
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>],
-        &[OwnedAction<C, E, CA, EA, I>]
-    ),
-> Engine<C, E, M, CA, EA, U> for Box<ParallelEngine<C, E, M, CA, EA, I, CC, U, F>> {
+        C: CellState + Send + Debug + 'static,
+        E: EntityState<C> + Send + Debug + 'static,
+        M: MutEntityState + Send + 'static,
+        CA: CellAction<C> + Send + Debug + 'static,
+        EA: EntityAction<C, E> + Send + Debug + 'static,
+        U: Universe<C, E, M>,
+        F: Fn(
+            &mut U,
+            &[OwnedAction<C, E, CA, EA>],
+            &[OwnedAction<C, E, CA, EA>],
+            &[OwnedAction<C, E, CA, EA>],
+        ),
+    > Engine<C, E, M, CA, EA, U> for Box<ParallelEngine<C, E, M, CA, EA, U, F>>
+{
     fn step(&mut self, mut universe: &mut U) {
         let &mut ParallelEngine {
-            ref index, worker_count,
+            ref index,
+            worker_count,
             ref exec_actions,
             ref action_buf_rx,
             ref mut wakeup_senders,
@@ -286,29 +322,33 @@ impl<
             ..
         } = &mut **self;
 
-        // TODO: Look into bullying Rust into letting us do without the `Arc` since that's a Heap allocation plus
-        // pointer overhead that has to happen every cycle.
+        // TODO: Look into bullying Rust into letting us do without the `Arc` since that's a Heap
+        // allocation plus pointer overhead that has to happen every cycle.
         let entity_count = universe.get_entities().len();
-        let cells_ptr = universe.get_cell_container() as *const CC;
-        let entities_ptr = universe.get_entities() as *const EntityContainer<C, E, M, I>;
+        let cells_ptr = universe.get_cells().as_ptr();
+        let entities_ptr = universe.get_entities() as *const EntityContainer<C, E, M>;
         // reset current entity count to 0
         index.store(0, Ordering::Relaxed);
 
         debug_assert_eq!(wakeup_senders.len(), worker_count);
-        // construct wakeup messages to send to all the workers and then send them over to get them doing work
+        // construct wakeup messages to send to all the workers and then send them over to get them
+        // doing work
         let mut i = 0;
         {
-            for (cell_action_buf, _, self_action_buf, _, entity_action_buf, _) in recycled_action_bufs.drain(..) {
+            for (cell_action_buf, _, self_action_buf, _, entity_action_buf, _) in
+                recycled_action_bufs.drain(..)
+            {
                 let msg = WakeupMessage {
-                    cell_action_buf: cell_action_buf,
-                    self_action_buf: self_action_buf,
-                    entity_action_buf: entity_action_buf,
-                    cells_ptr: cells_ptr,
-                    entities_ptr: entities_ptr,
-                    entity_count: entity_count,
+                    cell_action_buf,
+                    self_action_buf,
+                    entity_action_buf,
+                    cells_ptr,
+                    entities_ptr,
+                    entity_count,
                     index: index.clone(),
                 };
-                unsafe { wakeup_senders.get_unchecked_mut(i) }.send(msg)
+                unsafe { wakeup_senders.get_unchecked_mut(i) }
+                    .send(msg)
                     .expect("Unable to send wakeup message to worker thread!");
                 i += 1;
             }
@@ -317,8 +357,9 @@ impl<
         debug_assert_eq!(action_buf_buf.len(), 0);
         // collect the results from the worker threads
         for _ in 0..worker_count {
-            let bufs = action_buf_rx.recv()
-                .expect("Error while receiving action buffers from worker thread; thread probably died.");
+            let bufs = action_buf_rx.recv().expect(
+                "Error while receiving action buffers from worker thread; thread probably died.",
+            );
             action_buf_buf.push(bufs);
         }
         debug_assert_eq!(action_buf_buf.len(), worker_count);
@@ -327,10 +368,21 @@ impl<
         let exec_actions = exec_actions;
         let mut i = 0;
         for (
-            mut cell_action_buf, cell_action_count, mut self_action_buf, self_action_count, mut entity_action_buf, entity_action_count
-        ) in action_buf_buf.drain(..) {
-            // since we're re-using the buffers without clearing out old values for performance, set their lengths manually
-            let (real_cell_len, real_self_len, real_entity_len) = (cell_action_buf.len(), self_action_buf.len(), entity_action_buf.len());
+            mut cell_action_buf,
+            cell_action_count,
+            mut self_action_buf,
+            self_action_count,
+            mut entity_action_buf,
+            entity_action_count,
+        ) in action_buf_buf.drain(..)
+        {
+            // since we're re-using the buffers without clearing out old values for performance, set
+            // their lengths manually
+            let (real_cell_len, real_self_len, real_entity_len) = (
+                cell_action_buf.len(),
+                self_action_buf.len(),
+                entity_action_buf.len(),
+            );
             unsafe {
                 cell_action_buf.set_len(cell_action_count);
                 self_action_buf.set_len(self_action_count);
@@ -338,7 +390,12 @@ impl<
             }
 
             // evaluate all pending actions, allowing the engine to handle any conflicts
-            exec_actions(&mut universe, &cell_action_buf, &self_action_buf, &entity_action_buf);
+            exec_actions(
+                &mut universe,
+                &cell_action_buf,
+                &self_action_buf,
+                &entity_action_buf,
+            );
 
             // recycle the action buffers to avoid having to re-allocate them later
             unsafe {
@@ -346,7 +403,14 @@ impl<
                 self_action_buf.set_len(real_self_len);
                 entity_action_buf.set_len(real_entity_len);
             }
-            recycled_action_bufs.push((cell_action_buf, 0, self_action_buf, 0, entity_action_buf, 0));
+            recycled_action_bufs.push((
+                cell_action_buf,
+                0,
+                self_action_buf,
+                0,
+                entity_action_buf,
+                0,
+            ));
 
             i += 1;
         }
