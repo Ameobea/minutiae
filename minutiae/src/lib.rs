@@ -19,6 +19,7 @@ extern crate futures;
 extern crate num_cpus;
 extern crate rand;
 extern crate rand_pcg;
+extern crate slab;
 extern crate test;
 extern crate uuid;
 

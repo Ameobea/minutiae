@@ -21,6 +21,7 @@ num_cpus = "1.8.0"
 tokio-core = {version="0.1.16",optional=true}
 rand_pcg = "0.1.1"
 rand = "0.5.5"
+slab = "0.4.1"
 
 [dependencies.bincode]
 optional = true

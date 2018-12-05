@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 use action::{Action, CellAction, EntityAction, OwnedAction, SelfAction};
 use cell::{Cell, CellState};
-use container::{EntityContainer, EntitySlot};
+use container::EntityContainer;
 use engine::Engine;
 use entity::{Entity, EntityState, MutEntityState};
 use universe::Universe;

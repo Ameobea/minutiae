@@ -8,7 +8,8 @@ use entity::{EntityState, MutEntityState};
 use action::{CellAction, EntityAction};
 
 pub mod serial;
-pub mod parallel;
+// 90% sure this hella broken, and the code is terrible anyway.
+// pub mod parallel;
 pub mod iterator;
 
 pub trait Engine<

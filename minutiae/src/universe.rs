@@ -44,9 +44,9 @@ impl Default for Universe2DConf {
     fn default() -> Universe2DConf { Universe2DConf { size: 800 } }
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+// #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone)]
-#[cfg_attr(feature = "serde", serde(bound = "C: for<'d> Deserialize<'d>"))]
+// #[cfg_attr(feature = "serde", serde(bound = "C: for<'d> Deserialize<'d>"))]
 pub struct Universe2D<C: CellState, E: EntityState<C>, M: MutEntityState> {
     pub conf: Universe2DConf,
     pub cells: Vec<Cell<C>>,
@@ -56,11 +56,12 @@ pub struct Universe2D<C: CellState, E: EntityState<C>, M: MutEntityState> {
 impl<C: CellState, E: EntityState<C>, M: MutEntityState> Universe2D<C, E, M> {
     pub fn new(conf: Universe2DConf, gen: &mut Generator<C, E, M>) -> Universe2D<C, E, M> {
         assert!(conf.size > 0);
+        let universe_size = conf.size as usize;
 
         let mut universe = Universe2D {
             conf,
             cells: Vec::new(),
-            entities: EntityContainer::new(),
+            entities: EntityContainer::new(universe_size),
         };
 
         // use the generator to generate an initial layout of cells and entities with which to
@@ -79,10 +80,13 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> Universe2D<C, E, M> {
 
     /// Creates a new shell universe without any defined logic designed for use in a hybrid client.
     pub fn uninitialized() -> Self {
+        let conf = Universe2DConf::default();
+        let universe_size = conf.size as usize;
+
         Universe2D {
-            conf: Universe2DConf::default(),
+            conf,
             cells: Vec::new(),
-            entities: EntityContainer::new(),
+            entities: EntityContainer::new(universe_size),
         }
     }
 

@@ -1,36 +1,14 @@
 //! Declares container types that are used to provide abstracted access to data strucures within a
 //! universe.
 
-use std::{mem, u32};
-
 #[cfg(feature = "serde")]
 use serde::Deserialize;
 
+use slab::Slab;
 use uuid::Uuid;
 
 use cell::CellState;
 use entity::{Entity, EntityState, MutEntityState};
-
-/// Either holds an entity or a 'pointer' (in the form of an array index) of the next empty slot in
-/// the data structure. This functions somewhat similarly to a linked list.
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(bound = "C: for<'d> Deserialize<'d>"))]
-pub enum EntitySlot<C: CellState, E: EntityState<C>, M: MutEntityState> {
-    Occupied {
-        entity: Entity<C, E, M>,
-        universe_index: usize,
-    },
-    Empty(usize),
-}
-
-unsafe impl<C: CellState, E: EntityState<C>, M: MutEntityState> Send for EntitySlot<C, E, M>
-where
-    C: Send,
-    E: Send,
-    M: Send,
-{
-}
 
 /// Data structure holding all of the universe's entities.  The entities and their state are held in
 /// a vector of `EntitySlot`s, each of which either holds an entity or the index of the next empty
@@ -40,140 +18,76 @@ where
 /// A second internal structure is used to map universe indexes to entity indexes; it holds the
 /// entity indexes of all entities that reside in each universe index.
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(bound = "C: for<'d> Deserialize<'d>"))]
+// TODO: https://github.com/carllerche/slab/pull/41/files
+// #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+// #[cfg_attr(feature = "serde", serde(bound = "C: for<'d> Deserialize<'d>"))]
 pub struct EntityContainer<C: CellState, E: EntityState<C>, M: MutEntityState> {
-    pub entities: Vec<EntitySlot<C, E, M>>,
-    pub empty_index: usize,
+    /// `(entity, universe_ix)`
+    pub entities: Slab<(Entity<C, E, M>, usize)>,
+    /// A mapping of universe index to entity index
     pub positions: Vec<Vec<usize>>,
 }
 
 impl<C: CellState, E: EntityState<C>, M: MutEntityState> EntityContainer<C, E, M> {
-    pub fn new() -> Self {
+    pub fn new(universe_size: usize) -> Self {
         // a point of `u32::MAX` indicates that the slot is the last available one.
         // (We use `u32` instead of `usize` so that we can handle binary
         // serialization/deserialization on 32-bit platforms such as WebAssembly and Asm.JS)
         EntityContainer {
-            entities: vec![EntitySlot::Empty(u32::MAX as usize)],
-            empty_index: 0,
-            positions: Vec::new(),
+            entities: Slab::new(),
+            positions: vec![Vec::new(); universe_size * universe_size],
         }
     }
 
     /// Inserts an entity into the container, returning its index
     pub fn insert(&mut self, entity: Entity<C, E, M>, universe_index: usize) -> usize {
-        let &mut EntityContainer {
-            ref mut entities,
-            empty_index,
-            ref mut positions,
-        } = self;
-        let entity_index = if empty_index != (u32::MAX as usize) {
-            let next_empty = match entities[empty_index] {
-                EntitySlot::Empty(next_empty) => next_empty,
-                _ => unreachable!(),
-            };
-
-            // update the index of the next empty cell and insert the entity into the empty slot
-            self.empty_index = next_empty;
-            entities[empty_index] = EntitySlot::Occupied {
-                entity,
-                universe_index,
-            };
-
-            empty_index
-        } else {
-            // this is the last empty slot in the container, so we have to allocate space for
-            // another
-            let entity_count = entities.len();
-            entities.push(EntitySlot::Occupied {
-                entity,
-                universe_index,
-            });
-
-            entity_count
-        };
+        let entity_id = self.entities.insert((entity, universe_index));
 
         // update the positions vector to store the index of the entity
-        positions[universe_index].push(entity_index);
+        self.positions[universe_index].push(entity_id);
 
-        entity_index
+        entity_id
     }
 
     /// Removes an entity from the container, returning it along with its current index in the
     /// universe.
     pub fn remove(&mut self, entity_index: usize) -> Entity<C, E, M> {
-        let removed = mem::replace(
-            &mut self.entities[entity_index],
-            EntitySlot::Empty(self.empty_index),
-        );
-        self.empty_index = entity_index;
+        let (entity, universe_index) = self.entities.remove(entity_index);
 
-        match removed {
-            EntitySlot::Occupied {
-                entity,
-                universe_index,
-            } => {
-                // find the index of the index pointer inside the location vector and remove it
-                let position_index = self.positions[universe_index]
-                    .iter()
-                    .position(|&index| index == entity_index)
-                    .expect(
-                        "Unable to locate entity index at the expected location in the positions \
-                         vector!",
-                    );
-                let removed_entity_index = self.positions[universe_index].remove(position_index);
-                debug_assert_eq!(removed_entity_index, entity_index);
+        // find the index of the index pointer inside the location vector and remove it
+        let position_index = self.positions[universe_index]
+            .iter()
+            .position(|&index| index == entity_index)
+            .expect(
+                "Unable to locate entity index at the expected location in the positions vector!",
+            );
+        let removed_entity_index = self.positions[universe_index].remove(position_index);
+        debug_assert_eq!(removed_entity_index, entity_index);
 
-                entity
-            },
-            EntitySlot::Empty(_) => unreachable!(),
-        }
+        entity
     }
 
     /// Returns a reference to the entity contained at the supplied index.  Will cause undefined
     /// behavior in release mode and panic in debug mode ifthe index is out of bounds or the
     /// slot at the specified index is empty.
-    pub unsafe fn get(&self, index: usize) -> &Entity<C, E, M> {
-        debug_assert!(index < self.entities.len());
-        match self.entities.get_unchecked(index) {
-            &EntitySlot::Occupied {
-                ref entity,
-                universe_index: _,
-            } => entity,
-            _ => unreachable!(),
-        }
-    }
+    pub unsafe fn get(&self, index: usize) -> &Entity<C, E, M> { &self.entities[index].0 }
 
     /// Returns a mutable reference to the entity contained at the supplied index.  Will cause
     /// undefined behavior in release mode and panic in debug mode ifthe index is out of bounds
     /// or the slot at the specified index is empty.
     pub unsafe fn get_mut(&mut self, index: usize) -> &mut Entity<C, E, M> {
-        debug_assert!(index < self.entities.len());
-        match self.entities.get_unchecked_mut(index) {
-            &mut EntitySlot::Occupied {
-                ref mut entity,
-                universe_index: _,
-            } => entity,
-            _ => unreachable!(),
-        }
+        &mut self.entities[index].0
     }
 
     /// Checks if 1) an entity exists at the provided index and 2) that its UUID matches the
     /// supplied UUID.  If so, returns a reference to the contained entity and its corresponding
     /// universe index.
     pub fn get_verify(&self, index: usize, uuid: Uuid) -> Option<(&Entity<C, E, M>, usize)> {
-        debug_assert!(index < self.entities.len());
-        match unsafe { self.entities.get_unchecked(index) } {
-            &EntitySlot::Occupied {
-                ref entity,
-                ref universe_index,
-            } =>
-                if entity.uuid == uuid {
-                    Some((entity, *universe_index))
-                } else {
-                    None
-                },
-            _ => None,
+        let (entity, universe_index) = &self.entities[index];
+        if entity.uuid == uuid {
+            Some((entity, *universe_index))
+        } else {
+            None
         }
     }
 
@@ -185,18 +99,11 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> EntityContainer<C, E, M
         index: usize,
         uuid: Uuid,
     ) -> Option<(&mut Entity<C, E, M>, usize)> {
-        debug_assert!(index < self.entities.len());
-        match unsafe { self.entities.get_unchecked_mut(index) } {
-            &mut EntitySlot::Occupied {
-                ref mut entity,
-                ref universe_index,
-            } =>
-                if entity.uuid == uuid {
-                    Some((entity, *universe_index))
-                } else {
-                    None
-                },
-            _ => None,
+        let (entity, universe_index) = &mut self.entities[index];
+        if entity.uuid == uuid {
+            Some((entity, *universe_index))
+        } else {
+            None
         }
     }
 
@@ -204,90 +111,58 @@ impl<C: CellState, E: EntityState<C>, M: MutEntityState> EntityContainer<C, E, M
     /// the supplied index is occupied and that the destination index is sane.
     pub fn move_entity(&mut self, entity_index: usize, dst_universe_index: usize) {
         debug_assert!(entity_index < self.entities.len());
-        let src_universe_index: usize = match self.entities[entity_index] {
-            EntitySlot::Occupied {
-                entity: _,
-                ref mut universe_index,
-            } => {
-                // update the universe index within the entity slot
-                let src_universe_index: usize = *universe_index;
-                *universe_index = dst_universe_index;
-
-                src_universe_index
-            },
-            _ => unreachable!(),
-        };
+        let src_universe_index: &mut usize = &mut self.entities[entity_index].1;
 
         // remove the index of the entity from the old universe index
-        let position_index = self.positions[src_universe_index]
+        let position_index = self.positions[*src_universe_index]
             .iter()
             .position(|&index| index == entity_index)
             .expect(
                 "Unable to locate entity index at the expected location in the positions vector!",
             );
-        let removed = self.positions[src_universe_index].remove(position_index);
+        let removed = self.positions[*src_universe_index].remove(position_index);
         debug_assert_eq!(entity_index, removed);
         // and add it to the new universe index in the position vector
         self.positions[dst_universe_index].push(entity_index);
+        *src_universe_index = dst_universe_index;
     }
 
     /// Creates an iterator over the entities contained within the container with the format
     /// `(Entity, entity_index, universe_index)`.
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (&'a Entity<C, E, M>, usize, usize)> {
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (&Entity<C, E, M>, usize, usize)> {
         self.entities
             .iter()
-            .enumerate()
-            // TODO: investigate that fancy enum variant thing here
-            .filter(|&(_, slot)| match slot {
-                &EntitySlot::Occupied {
-                    entity: _,
-                    universe_index: _,
-                } => true,
-                &EntitySlot::Empty(_) => false,
-            })
-            .map(|(entity_index, slot)| match slot {
-                &EntitySlot::Occupied {
-                    ref entity,
-                    ref universe_index,
-                } => (entity, entity_index, *universe_index),
-                _ => unreachable!(),
-            })
+            .map(|(entity_ix, (entity, universe_ix))| (entity, entity_ix, *universe_ix))
     }
 
     /// Creates a mutable iterator over the entities contained within the container with the format
     /// `(Entity, entity_index, universe_index)`.
-    pub fn iter_mut<'a>(
-        &'a mut self,
-    ) -> impl Iterator<Item = (&'a mut Entity<C, E, M>, usize, usize)> {
-        self.entities
-            .iter_mut()
-            .enumerate()
-            .filter(|&(_, ref slot)| match slot {
-                &&mut EntitySlot::Occupied {
-                    entity: _,
-                    universe_index: _,
-                } => true,
-                &&mut EntitySlot::Empty(_) => false,
-            })
-            .map(|(entity_index, slot)| match slot {
-                &mut EntitySlot::Occupied {
-                    ref mut entity,
-                    ref universe_index,
-                } => (entity, entity_index, *universe_index),
-                _ => unreachable!(),
-            })
-    }
+    // pub fn iter_mut<'a>(
+    //     &'a mut self,
+    // ) -> impl Iterator<Item = (&'a mut Entity<C, E, M>, usize, usize)> {
+    //     self.entities
+    //         .iter_mut()
+    //         .enumerate()
+    //         .filter(|&(_, ref slot)| match slot {
+    //             &&mut EntitySlot::Occupied {
+    //                 entity: _,
+    //                 universe_index: _,
+    //             } => true,
+    //             &&mut EntitySlot::Empty(_) => false,
+    //         })
+    //         .map(|(entity_index, slot)| match slot {
+    //             &mut EntitySlot::Occupied {
+    //                 ref mut entity,
+    //                 ref universe_index,
+    //             } => (entity, entity_index, *universe_index),
+    //             _ => unreachable!(),
+    //         })
+    // }
 
     /// Returns the position of the entity with the given entity index.
     pub fn get_position_index(&self, entity_index: usize) -> usize {
         debug_assert!(self.entities.len() > entity_index);
-        let universe_index = match self.entities[entity_index] {
-            EntitySlot::Occupied {
-                entity: _,
-                universe_index,
-            } => universe_index,
-            _ => unreachable!(),
-        };
+        let universe_index = self.entities[entity_index].1;
 
         self.positions[universe_index]
             .iter()
