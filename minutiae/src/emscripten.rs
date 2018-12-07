@@ -134,7 +134,7 @@ impl<
         }
 
         // pass a pointer to our internal buffer to the canvas render function
-        unsafe { (self.canvas_render)(&self.pixbuf) }
+        (self.canvas_render)(&self.pixbuf)
     }
 }
 

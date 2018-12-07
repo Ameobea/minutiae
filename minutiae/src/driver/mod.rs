@@ -40,7 +40,7 @@ impl<
         println!("Starting simulation driver...");
 
         loop {
-            for mut m in middleware.iter_mut() {
+            for m in middleware.iter_mut() {
                 m.before_render(&mut universe);
             }
 
