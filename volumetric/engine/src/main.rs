@@ -17,8 +17,10 @@ use minutiae::prelude::*;
 use minutiae::emscripten::EmscriptenDriver;
 use minutiae::engine::serial::SerialEngine;
 use minutiae::engine::iterator::SerialEntityIterator;
+use minutiae::universe::Universe2D;
 #[allow(unused_imports)]
 use noise::{BasicMulti, Billow, Fbm, MultiFractal, NoiseModule, RidgedMulti, Point3, RangeFunction};
+use uuid::Uuid;
 
 extern {
     /// Invokes the external JS function to pass this buffer to WebGL and render it
@@ -103,23 +105,39 @@ impl EntityAction<CS, ES> for EA {}
 
 struct OurEngine;
 
-impl SerialEngine<CS, ES, MES, CA, EA, SerialEntityIterator<CS, ES>> for OurEngine {
-    fn iter_entities(&self, _: &[Vec<Entity<CS, ES, MES>>]) -> SerialEntityIterator<CS, ES> {
+impl Drop for OurEngine {
+    fn drop(&mut self) {
+        println!("Dropping engine... this is bad.");
+    }
+}
+
+impl SerialEngine<CS, ES, MES, CA, EA, SerialEntityIterator<CS, ES>, Universe2D<CS, ES, MES>> for OurEngine {
+    fn iter_entities(&self, _: &Universe2D<CS, ES, MES>) -> SerialEntityIterator<CS, ES> {
         SerialEntityIterator::new(UNIVERSE_SIZE)
     }
 
     fn exec_actions(
-        &self, mut universe: &mut Universe<CS, ES, MES, CA, EA>, cell_actions: &[OwnedAction<CS, ES, CA, EA>],
+        &self, mut universe: &mut Universe2D<CS, ES, MES>, cell_actions: &[OwnedAction<CS, ES, CA, EA>],
         self_actions: &[OwnedAction<CS, ES, CA, EA>], entity_actions: &[OwnedAction<CS, ES, CA, EA>]
     ) {
         for cell_action in cell_actions { exec_cell_action(cell_action, &mut universe); }
         for self_action in self_actions { exec_self_action(self_action, universe); }
         for entity_action in entity_actions { exec_entity_action(entity_action, universe); }
     }
+
+    fn drive_entity(
+        &mut self,
+        universe_index: usize,
+        entity: &Entity<CS, ES, MES>,
+        universe: &Universe2D<CS, ES, MES>,
+        cell_action_executor: &mut FnMut(CA, usize),
+        self_action_executor: &mut FnMut(SelfAction<CS, ES, EA>),
+        entity_action_executor: &mut FnMut(EA, usize, Uuid)
+    ) {}
 }
 
 pub struct WG;
-impl Generator<CS, ES, MES, CA, EA> for WG {
+impl Generator<CS, ES, MES> for WG {
     fn gen(&mut self, _: &UniverseConf) -> (Vec<Cell<CS>>, Vec<Vec<Entity<CS, ES, MES>>>) {
         // create a blank universe to start off with
         (
@@ -128,9 +146,6 @@ impl Generator<CS, ES, MES, CA, EA> for WG {
         )
     }
 }
-
-// dummy function until `cell_mutator` is deprecated entirely
-pub fn cell_mutator(_: usize, _: &[Cell<CS>]) -> Option<CS> { None }
 
 /// Dummy noise function implementation designed to make testing easier without draining my
 /// laptop's battery with intensive calculations.
@@ -166,15 +181,14 @@ impl NoiseModule<Point3<f32>> for DummyNoise {
     }
 }
 
-pub fn main() {
+pub fn main()  {
     // set up the minutiae environment
     let conf = UniverseConf {
-        size: UNIVERSE_SIZE,
-        view_distance: 1,
+        size: UNIVERSE_SIZE as u32,
     };
-    let universe = Universe::new(conf, &mut WG, cell_mutator, entity_driver);
+    let universe = Universe2D::new(conf, &mut WG);
     let driver = EmscriptenDriver;
-    let engine: Box<SerialEngine<CS, ES, MES, CA, EA, SerialEntityIterator<CS, ES>>> = Box::new(OurEngine);
+    let engine: Box<SerialEngine<CS, ES, MES, CA, EA, SerialEntityIterator<CS, ES>, Universe2D<CS, ES, MES>>> = Box::new(OurEngine);
 
     // create a noise generator to be used to populate the buffer
     let noise_gen = BasicMulti::new()
@@ -183,7 +197,7 @@ pub fn main() {
         .set_lacunarity(2.0)
         .set_persistence(0.5);
 
-    driver.init(universe, engine, &mut [
+    driver.init(universe, engine, vec![
         Box::new(NoiseStepper::new(noise_gen, Some(MasterConf {
             canvas_size: UNIVERSE_SIZE,
             needs_resize: false,

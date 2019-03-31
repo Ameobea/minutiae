@@ -27,12 +27,13 @@ extern "C" {
 
 thread_local!(static MAIN_LOOP_CALLBACK: RefCell<*mut c_void> = RefCell::new(null_mut()));
 
-pub fn set_main_loop_callback<F>(callback: F)
+#[allow(clippy::boxed_local)]
+pub fn set_main_loop_callback<F>(callback: Box<F>)
 where
     F: FnMut(),
 {
     MAIN_LOOP_CALLBACK.with(|log| {
-        *log.borrow_mut() = &callback as *const _ as *mut c_void;
+        *log.borrow_mut() = Box::into_raw(callback) as *mut c_void;
     });
 
     unsafe {
@@ -70,7 +71,8 @@ impl<
         mut engine: N,
         mut middleware: Vec<Box<Middleware<C, E, M, CA, EA, U, N>>>,
     ) {
-        let closure = || {
+        let closure = move || {
+            println!("In closure...");
             for m in middleware.iter_mut() {
                 m.before_render(&mut universe);
             }
@@ -83,7 +85,7 @@ impl<
         };
 
         // register the driver's core logic to be called by Emscripten automatically
-        set_main_loop_callback(closure);
+        set_main_loop_callback(box closure);
     }
 }
 

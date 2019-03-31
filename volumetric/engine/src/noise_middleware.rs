@@ -52,21 +52,22 @@ fn drive_noise<C: CellState + BufColumn>(
 /// Very custom function for changing the size of the universe by either removing elements from it or expanding
 /// it with elements to match the new length.  Totally ignores all entity-related stuff for now and will almost
 /// certainly break if entities are utilized in any way.
-fn resize_universe<
-    C: CellState + BufColumn, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, G: Engine<C, E, M, CA, EA>
->(universe: &mut Universe<C, E, M, CA, EA>, new_size: usize) {
-    if new_size == 0 {
-        return error("Requested change of universe size to 0!");
-    }
+// fn resize_universe<
+//     C: CellState + BufColumn, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, U: Universe<C, E, M>, G: Engine<C, E, M, CA, EA, U>
+// >(universe: &mut U, new_size: usize) {
+//     if new_size == 0 {
+//         return error("Requested change of universe size to 0!");
+//     }
 
-    // universe.cells.resize(new_size * new_size, Cell { state: (0.0).into() } );
-    universe.conf.size = new_size;
-}
+//     // universe.cells.resize(new_size * new_size, Cell { state: (0.0).into() } );
+//     universe.get_conf.size = new_size;
+// }
 
 pub struct NoiseStepper<N: NoiseModule<Point3<f32>>> {
     conf: MasterConf,
     noise: N,
     universe_size: usize,
+    seq: usize
 }
 
 impl<
@@ -75,22 +76,25 @@ impl<
     M: MutEntityState,
     CA: CellAction<C>,
     EA: EntityAction<C, E>,
-    G: Engine<C, E, M, CA, EA>,
+    U: Universe<C, E, M>,
+    G: Engine<C, E, M, CA, EA, U>,
     N: NoiseModule<Point3<f32>, Output=f32>
-> Middleware<C, E, M, CA, EA, G> for NoiseStepper<N> {
-    fn after_render(&mut self, universe: &mut Universe<C, E, M, CA, EA>) {
+> Middleware<C, E, M, CA, EA, U, G> for NoiseStepper<N> {
+    fn after_render(&mut self, universe: &mut U) {
         // handle any new setting changes before rendering
 
-        if universe.seq % ((60 * 4) + 1) == 0 || universe.seq == 1 {
+        if self.seq % ((60 * 4) + 1) == 0 || self.seq == 1 {
             drive_noise(
-                &mut universe.cells,
-                universe.seq,
+                universe.get_cells_mut(),
+                self.seq,
                 &self.noise,
                 self.universe_size,
                 self.conf.zoom,
                 self.conf.speed
             );
         }
+
+        self.seq += 1;
     }
 }
 
@@ -103,6 +107,7 @@ impl<N: NoiseModule<Point3<f32>>> NoiseStepper<N> {
             },
             noise,
             universe_size,
+            seq: 0
         }
     }
 }

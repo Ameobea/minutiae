@@ -23,15 +23,16 @@ pub struct Buf3dWriter {
     screen_ratio: f32,
     camera_coord: Point3<f32>,
     focal_coord: Point3<f32>,
+    seq: usize,
 }
 
 impl<
-    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, G: Engine<C, E, M, CA, EA>
+    C: CellState, E: EntityState<C>, M: MutEntityState, CA: CellAction<C>, EA: EntityAction<C, E>, U: Universe<C, E, M>, G: Engine<C, E, M, CA, EA, U>,
 // require that supplied `CellState` can be converted into a row of the buffer
-> Middleware<C, E, M, CA, EA, G> for Buf3dWriter where C: BufColumn {
-    fn after_render(&mut self, universe: &mut Universe<C, E, M, CA, EA>) {
+> Middleware<C, E, M, CA, EA, U, G> for Buf3dWriter where C: BufColumn {
+    fn after_render(&mut self, universe: &mut U) {
         // populate the buffer with the values from each vector of Z values
-        for (ix, stack) in universe.cells
+        for (ix, stack) in universe.get_cells()
             .iter()
             .map(|cell| cell.state.get_col()) // fetch the slice of Z `f32`s
             .enumerate() {
@@ -46,7 +47,7 @@ impl<
         // let cur_rads = (cur_step as f32 / STEPS_PER_ORBIT as f32) * 2. * f32::consts::PI;
         // let focal_coord = [4., cur_rads.cos() * 4., cur_rads.sin() * 4.];
         let camera_coord = self.focal_coord;
-        let focal_coord = [1.0, ((universe.seq % (60 * 4)) as f32) / (60. * 4.), 0.0];
+        let focal_coord = [1.0, ((self.seq % (60 * 4)) as f32) / (60. * 4.), 0.0];
         debug(&format!("Focal coord: {:?}", focal_coord));
 
         // execute the callback with the pointer to the updated buffer
@@ -54,6 +55,8 @@ impl<
             self.buf.as_ptr(), self.universe_size, self.canvas_size, self.screen_ratio, camera_coord[0],
             camera_coord[1], camera_coord[2], focal_coord[0], focal_coord[1], focal_coord[2]
         ) }
+
+        self.seq += 1;
     }
 }
 
@@ -70,6 +73,7 @@ impl Buf3dWriter {
             screen_ratio,
             camera_coord,
             focal_coord,
+            seq: 0
         }
     }
 }

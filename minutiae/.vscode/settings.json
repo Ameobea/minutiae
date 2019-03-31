@@ -1,4 +1,5 @@
 {
   "rust.features": ["serde", "server", "client"],
-  "rust-client.channel": "nightly"
+  "rust-client.channel": "nightly",
+  "rust.cfg_test": false
 }

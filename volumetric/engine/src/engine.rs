@@ -5,7 +5,7 @@ use minutiae::prelude::{Universe, OwnedAction};
 use super::*;
 
 pub fn exec_actions(
-    universe: &mut Universe<CS, ES, MES, CA, EA>,
+    universe: &mut Universe2D<CS, ES, MES>,
     self_actions: &[OwnedAction<CS, ES, CA, EA>],
     cell_actions: &[OwnedAction<CS, ES, CA, EA>],
     entity_actions: &[OwnedAction<CS, ES, CA, EA>]
@@ -26,21 +26,21 @@ pub fn exec_actions(
 
 pub fn exec_cell_action(
     action: &OwnedAction<CS, ES, CA, EA>,
-    universe: &mut Universe<CS, ES, MES, CA, EA>
+    universe: &mut Universe2D<CS, ES, MES>
 ) {
     unimplemented!(); // TODO
 }
 
 pub fn exec_self_action(
     action: &OwnedAction<CS, ES, CA, EA>,
-    universe: &mut Universe<CS, ES, MES, CA, EA>
+    universe: &mut Universe2D<CS, ES, MES>
 ) {
     unimplemented!(); // TODO
 }
 
 pub fn exec_entity_action(
     action: &OwnedAction<CS, ES, CA, EA>,
-    universe: &mut Universe<CS, ES, MES, CA, EA>
+    universe: &mut Universe2D<CS, ES, MES>
 ) {
     unimplemented!(); // TODO
 }
