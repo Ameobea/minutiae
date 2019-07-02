@@ -41,6 +41,8 @@ extern crate gif;
 extern crate futures_cpupool;
 #[cfg(feature = "server")]
 extern crate tokio_core;
+#[cfg(feature = "emscripten")]
+extern crate wasm_bindgen;
 #[cfg(feature = "server")]
 extern crate websocket;
 
@@ -48,6 +50,7 @@ pub mod action;
 pub mod cell;
 pub mod container;
 pub mod driver;
+#[cfg(feature = "emscripten")]
 pub mod emscripten;
 pub mod engine;
 pub mod entity;

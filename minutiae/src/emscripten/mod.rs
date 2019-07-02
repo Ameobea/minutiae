@@ -12,6 +12,8 @@ use prelude::*;
 use universe::Universe2D;
 use util::ColorCalculator;
 
+pub mod driver;
+
 #[allow(non_camel_case_types)]
 type em_callback_func = unsafe extern "C" fn();
 
@@ -85,7 +87,7 @@ impl<
         };
 
         // register the driver's core logic to be called by Emscripten automatically
-        set_main_loop_callback(box closure);
+        set_main_loop_callback(Box::new(closure));
     }
 }
 

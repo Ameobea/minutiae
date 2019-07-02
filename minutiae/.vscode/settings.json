@@ -1,5 +1,5 @@
 {
-  "rust.features": ["serde", "server", "client"],
+  "rust.features": ["serde", "server", "client", "emscripten"],
   "rust-client.channel": "nightly",
   "rust.cfg_test": false
 }
