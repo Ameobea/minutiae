@@ -6,7 +6,7 @@ use super::*;
 use crate::prelude::*;
 
 pub struct JSDriver {
-    register_tick_callback: extern "C" fn(closure: &Closure<(dyn std::ops::FnMut() -> ())>),
+    pub register_tick_callback: fn(closure: &Closure<(dyn std::ops::FnMut() -> ())>),
 }
 
 #[thread_local]
