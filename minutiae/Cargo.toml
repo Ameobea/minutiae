@@ -52,7 +52,7 @@ version = "=0.2.47"
 
 [dependencies.websocket]
 optional = true
-version = "0.20.2"
+version = "0.26.5"
 
 [features]
 client = [
